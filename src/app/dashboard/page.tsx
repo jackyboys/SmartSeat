@@ -83,24 +83,14 @@ export default function DashboardPage() {
     showNotification('正在保存...', 'success');
     const layout_data = { tables, unassignedGuests };
     let savedProject: Project | null = null;
-    // 本地 E2E 模式：跳过后端调用，直接成功
-    const bypassEnv = process.env.NEXT_PUBLIC_E2E_BYPASS_AUTH === '1';
-    const hasE2EParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('e2e') === '1';
-    if (bypassEnv && hasE2EParam) {
-      await new Promise(r => setTimeout(r, 100));
-      savedProject = { ...(currentProject as Project), layout_data };
-      showNotification('项目已成功保存！');
-      setIsSaving(false);
-      setHasUnsavedChanges(false);
-      return savedProject;
-    }
-    if (currentProject.id === -1) {
+    // id < 0 表示本地临时项目，需要执行创建
+    if (currentProject.id < 0) {
       const { data, error } = await supabase.from('projects').insert({ name: currentProject.name, layout_data, user_id: user.id }).select().single();
       if (error) { showNotification(`创建失败: ${error.message}`, 'error'); } 
       else if(data) {
         showNotification('项目已成功创建！');
         savedProject = data;
-        const newProjects = projects.map(p => p.id === -1 ? data : p);
+        const newProjects = projects.map(p => p.id === currentProject.id ? data : p);
         setProjects(newProjects);
         setCurrentProject(data);
       }
@@ -129,8 +119,12 @@ export default function DashboardPage() {
 
     setCurrentProject(project);
     const layout = project.layout_data;
-    setTables(layout?.tables.map(t => ({...t, id: t.id || uuidv4(), guests: t.guests.map(g => ({...g, id: g.id || uuidv4()}))})) || []);
-    setUnassignedGuests(layout?.unassignedGuests.map(g => ({...g, id: g.id || uuidv4()})) || []);
+    setTables(layout?.tables.map((t: SeatingTable) => ({
+      ...t,
+      id: t.id || uuidv4(),
+      guests: t.guests.map((g: Guest) => ({ ...g, id: g.id || uuidv4() }))
+    })) || []);
+    setUnassignedGuests(layout?.unassignedGuests.map((g: Guest) => ({ ...g, id: g.id || uuidv4() })) || []);
     setHasUnsavedChanges(false);
   }, [hasUnsavedChanges, handleSaveProject, currentProject]);
 
@@ -144,8 +138,12 @@ export default function DashboardPage() {
         const projectToLoad = data[0];
         setCurrentProject(projectToLoad);
         const layout = projectToLoad.layout_data;
-        setTables(layout?.tables.map(t => ({...t, id: t.id || uuidv4(), guests: t.guests.map(g => ({...g, id: g.id || uuidv4()}))})) || []);
-        setUnassignedGuests(layout?.unassignedGuests.map(g => ({...g, id: g.id || uuidv4()})) || []);
+        setTables(layout?.tables.map((t: SeatingTable) => ({
+          ...t,
+          id: t.id || uuidv4(),
+          guests: t.guests.map((g: Guest) => ({ ...g, id: g.id || uuidv4() }))
+        })) || []);
+        setUnassignedGuests(layout?.unassignedGuests.map((g: Guest) => ({ ...g, id: g.id || uuidv4() })) || []);
       } else {
         const newProj: Project = { id: -1, name: '我的第一个项目', layout_data: { tables: [], unassignedGuests: [] } };
         setCurrentProject(newProj); setTables([]); setUnassignedGuests([]);
@@ -288,20 +286,6 @@ export default function DashboardPage() {
     const editorElement = document.getElementById('main-editor-area');
     if (!editorElement) { showNotification('找不到编辑区元素', 'error'); return; }
     showNotification('正在生成PDF，请稍候...');
-    // 在 E2E 模式下走快速路径，避免 html2canvas 在无头环境下偶发超时
-    const bypassEnv = process.env.NEXT_PUBLIC_E2E_BYPASS_AUTH === '1';
-    const hasE2EParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('e2e') === '1';
-    if (bypassEnv && hasE2EParam) {
-      try {
-        const pdf = new jsPDF('l', 'px', [800, 600]);
-        pdf.text('SmartSeat Export (E2E)', 20, 30);
-        pdf.save(`${currentProject?.name || '座位图'}.pdf`);
-      } catch (e) {
-        showNotification('导出PDF失败，请重试', 'error');
-        console.error(e);
-      }
-      return;
-    }
     html2canvas(editorElement, { scale: 2, backgroundColor: '#111827' }).then(canvas => {
       try {
         const imgData = canvas.toDataURL('image/png');
@@ -396,24 +380,6 @@ export default function DashboardPage() {
   
   useEffect(() => {
     const initialize = async () => {
-      // E2E 本地测试跳过登录：需要同时满足
-      // 1) 环境变量 NEXT_PUBLIC_E2E_BYPASS_AUTH=1
-      // 2) URL 参数 e2e=1
-      const bypassEnv = process.env.NEXT_PUBLIC_E2E_BYPASS_AUTH === '1';
-      const hasE2EParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('e2e') === '1';
-      if (bypassEnv && hasE2EParam) {
-        const dummyUser = { id: 'e2e-user-id', email: 'e2e@example.com' } as unknown as User;
-        setUser(dummyUser);
-        // 提供一个默认的空项目，避免访问后端
-        const demoProject: Project = { id: -1, name: 'E2E 测试项目', layout_data: { tables: [], unassignedGuests: [] } };
-        setProjects([demoProject]);
-        setCurrentProject(demoProject);
-        setTables([]);
-        setUnassignedGuests([]);
-        setIsLoading(false);
-        return;
-      }
-
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUser(user);

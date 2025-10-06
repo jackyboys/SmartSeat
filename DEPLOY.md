@@ -5,7 +5,7 @@
 ## 一、GitHub Actions：CI（E2E 自动化）
 
 仓库已内置 `.github/workflows/ci.yml`：
-- push/PR 到 `main` 分支会自动：安装、启动 dev（E2E 模式）并运行 Playwright “全量检查点”用例。
+- push/PR 到 `main` 分支会自动：安装、启动 dev 并运行 Playwright 用例。
 - 失败会上传测试报告（artifact）。
 
 ## 二、部署到 Vercel（推荐）

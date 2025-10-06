@@ -26,9 +26,7 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run E2E (dev server)
-        env:
-          NEXT_PUBLIC_E2E_BYPASS_AUTH: '1'
-        run: npx start-server-and-test "npm run dev:e2e" http://localhost:3000 "npm run test:e2e:features"
+        run: npx start-server-and-test "npm run dev" http://localhost:3000 "npm run test:e2e"
 
       - name: Upload Playwright Report on failure
         if: failure()
