@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import LogoutButton from '@/components/LogoutButton';
-import { DndContext, closestCenter, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, rectIntersection, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -21,13 +21,20 @@ interface SeatingTable { id: string; tableName: string; guests: Guest[]; }
 interface Project { id: number; name: string; layout_data: { tables: SeatingTable[]; unassignedGuests: Guest[]; } | null; }
 
 // --- UI 组件 ---
-const DraggableGuest = ({ guest, onDelete }: { guest: Guest; onDelete: (guestId: string) => void; }) => {
+const DraggableGuest = ({ guest, onDelete, tableId }: { guest: Guest; onDelete: (guestId: string, tableId?: string) => void; tableId?: string; }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: guest.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, };
+  
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onDelete(guest.id, tableId);
+  };
+  
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-testid="guest-item" data-guest-name={guest.name} className="group p-2 bg-gray-600 rounded-md text-white cursor-grab active:cursor-grabbing shadow-sm text-sm flex justify-between items-center">
       <span>{guest.name}</span>
-      <button onClick={() => onDelete(guest.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity">✕</button>
+      <button onClick={handleDelete} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity">✕</button>
     </div>
   );
 };
@@ -39,6 +46,16 @@ const Modal = ({ children, onClose }: { children: React.ReactNode, onClose: () =
     </div>
   </div>
 );
+
+// 可投放容器：为“未分配宾客”区和各桌子提供可放置区域，支持空列表时的放置
+const DroppableContainer = ({ id, className, children }: { id: string; className?: string; children: React.ReactNode }) => {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div ref={setNodeRef} className={`${className ?? ''} ${isOver ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900' : ''}`}>
+      {children}
+    </div>
+  );
+};
 
 // --- 主页面 ---
 export default function DashboardPage() {
@@ -53,12 +70,16 @@ export default function DashboardPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | null>(null);
   const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
   const [inputValue, setInputValue] = useState('');
   const [aiGuestList, setAiGuestList] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<{ guestId: string; tableId: string; guestName: string } | null>(null);
+  const [deleteUnassignedConfirm, setDeleteUnassignedConfirm] = useState<{ guestId: string; guestName: string } | null>(null);
 
+  const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const supabase = createClient();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -75,38 +96,70 @@ export default function DashboardPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const markChanges = useCallback(() => setHasUnsavedChanges(true), []);
-
   const handleSaveProject = useCallback(async () => {
-    if (!currentProject || !user || !hasUnsavedChanges) return null;
+    if (!currentProject || !user || !hasUnsavedChanges || isSaving) return null;
+
+    if (autoSaveTimeout.current) {
+        clearTimeout(autoSaveTimeout.current);
+    }
+
     setIsSaving(true);
-    showNotification('正在保存...', 'success');
     const layout_data = { tables, unassignedGuests };
     let savedProject: Project | null = null;
-    // id < 0 表示本地临时项目，需要执行创建
-    if (currentProject.id < 0) {
-      const { data, error } = await supabase.from('projects').insert({ name: currentProject.name, layout_data, user_id: user.id }).select().single();
-      if (error) { showNotification(`创建失败: ${error.message}`, 'error'); } 
-      else if(data) {
-        showNotification('项目已成功创建！');
-        savedProject = data;
-        const newProjects = projects.map(p => p.id === currentProject.id ? data : p);
-        setProjects(newProjects);
-        setCurrentProject(data);
+    
+    try {
+      if (currentProject.id < 0) {
+        const { data, error } = await supabase.from('projects').insert({ name: currentProject.name, layout_data, user_id: user.id }).select().single();
+        if (error) { 
+          console.error('Insert project error:', error);
+          showNotification(`创建失败: ${error.message}`, 'error'); 
+          setIsSaving(false);
+          return null;
+        } 
+        else if(data) {
+          showNotification('项目已创建并保存！', 'success');
+          savedProject = data;
+          const newProjects = projects.map(p => p.id === currentProject.id ? data : p);
+          setProjects(newProjects);
+          setCurrentProject(data);
+        }
+      } else {
+        const { error } = await supabase.from('projects').update({ name: currentProject.name, layout_data }).eq('id', currentProject.id);
+        if (error) { 
+          console.error('Update project error:', error);
+          showNotification(`保存失败: ${error.message}`, 'error'); 
+          setIsSaving(false);
+          return null;
+        }
+        else {
+          showNotification('项目已保存！', 'success');
+          savedProject = { ...currentProject, layout_data };
+          setProjects(projects.map(p => p.id === currentProject.id ? {...p, name: currentProject.name, layout_data} : p));
+        }
       }
-    } else {
-      const { error } = await supabase.from('projects').update({ name: currentProject.name, layout_data }).eq('id', currentProject.id);
-      if (error) { showNotification(`更新失败: ${error.message}`, 'error'); }
-      else {
-        showNotification('项目已成功保存！');
-        savedProject = { ...currentProject, layout_data };
-        setProjects(projects.map(p => p.id === currentProject.id ? {...p, name: currentProject.name} : p));
-      }
+    } catch (err: any) {
+      console.error('Save project error:', err);
+      showNotification(`保存出错: ${err.message}`, 'error');
+      setIsSaving(false);
+      return null;
     }
+    
     setIsSaving(false);
     setHasUnsavedChanges(false);
     return savedProject;
-  }, [currentProject, user, hasUnsavedChanges, tables, unassignedGuests, projects]);
+  }, [currentProject, user, hasUnsavedChanges, tables, unassignedGuests, projects, isSaving]);
+
+  const markChanges = useCallback(() => {
+    setHasUnsavedChanges(true);
+    if (autoSaveTimeout.current) {
+      clearTimeout(autoSaveTimeout.current);
+    }
+    if (autoSaveEnabled) {
+      autoSaveTimeout.current = setTimeout(() => {
+         handleSaveProject();
+      }, 1000);
+    }
+  }, [handleSaveProject, autoSaveEnabled]);
   
   const handleLoadProject = useCallback(async (project: Project) => {
     if (currentProject?.id === project.id) return;
@@ -157,7 +210,6 @@ export default function DashboardPage() {
     if (hasUnsavedChanges) {
         if (!confirm('您有未保存的更改，确定要创建新项目吗？所有未保存的更改将丢失。')) return;
     }
-    // 使用唯一的负数 id 代表“未保存项目”，避免与现有占位 id(-1) 冲突
     const tempId = -Date.now();
     const newProj: Project = { id: tempId, name: inputValue, layout_data: { tables: [], unassignedGuests: [] } };
     setProjects([newProj, ...projects]);
@@ -236,13 +288,62 @@ export default function DashboardPage() {
     if (!inputValue.trim()) { showNotification('桌子名称不能为空', 'error'); return; }
     const newTable: SeatingTable = { id: uuidv4(), tableName: inputValue, guests: [] };
     setTables([...tables, newTable]);
-    setIsModalOpen(null); setInputValue(''); markChanges();
+    setIsModalOpen(null); setInputValue('');
+    // 等待一次渲染后标记更改，避免在某些设备上拖放容器未即时挂载
+    setTimeout(() => { markChanges(); }, 0);
   };
 
   const handleDeleteGuest = (guestId: string) => {
-    if (!confirm('您确定要永久删除这位宾客吗？')) return;
-    setUnassignedGuests(unassignedGuests.filter(g => g.id !== guestId));
-    setTables(tables.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)})));
+    const guest = unassignedGuests.find(g => g.id === guestId);
+    if (!guest) return;
+    
+    setDeleteUnassignedConfirm({ guestId, guestName: guest.name });
+  };
+
+  const handleConfirmDeleteUnassigned = () => {
+    if (!deleteUnassignedConfirm) return;
+    
+    const { guestId } = deleteUnassignedConfirm;
+    
+    // 从未分配宾客中删除
+    setUnassignedGuests(prev => prev.filter(g => g.id !== guestId));
+    // 从所有桌子中删除
+    setTables(prev => prev.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)})));
+    
+    setDeleteUnassignedConfirm(null);
+    markChanges();
+  };
+
+  const handleRemoveGuestFromTable = (guestId: string, tableId: string) => {
+    const guest = tables.find(t => t.id === tableId)?.guests.find(g => g.id === guestId);
+    if (!guest) return;
+
+    setDeleteConfirm({ guestId, tableId, guestName: guest.name });
+  };
+
+  const handleConfirmDelete = (action: 'move' | 'delete') => {
+    if (!deleteConfirm) return;
+    
+    const { guestId, tableId, guestName } = deleteConfirm;
+    const guest = tables.find(t => t.id === tableId)?.guests.find(g => g.id === guestId);
+    if (!guest) return;
+
+    if (action === 'move') {
+      // 移动到未分配区
+      setTables(prev => prev.map(t => 
+        t.id === tableId 
+          ? {...t, guests: t.guests.filter(g => g.id !== guestId)}
+          : t
+      ));
+      setUnassignedGuests(prev => [...prev, guest]);
+      showNotification('宾客已移动到未分配区');
+    } else {
+      // 彻底删除
+      setTables(prev => prev.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)})));
+      showNotification('宾客已彻底删除');
+    }
+    
+    setDeleteConfirm(null);
     markChanges();
   };
 
@@ -283,20 +384,234 @@ export default function DashboardPage() {
   };
   
   const handleExportPdf = () => {
-    const editorElement = document.getElementById('main-editor-area');
-    if (!editorElement) { showNotification('找不到编辑区元素', 'error'); return; }
+    if (!currentProject) { 
+      showNotification('请先选择一个项目', 'error'); 
+      return; 
+    }
+    
     showNotification('正在生成PDF，请稍候...');
-    html2canvas(editorElement, { scale: 2, backgroundColor: '#111827' }).then(canvas => {
-      try {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('l', 'px', [canvas.width, canvas.height]);
-        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-        pdf.save(`${currentProject?.name || '座位图'}.pdf`);
-      } catch (e) {
-        showNotification('导出PDF失败，请重试', 'error');
-        console.error(e);
+    
+    try {
+      // 创建HTML内容
+      let htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              line-height: 1.6; 
+              margin: 20px; 
+              font-size: 14px;
+            }
+            h1 { 
+              text-align: center; 
+              color: #333; 
+              margin-bottom: 10px;
+              font-size: 24px;
+            }
+            .timestamp { 
+              text-align: center; 
+              color: #666; 
+              margin-bottom: 30px;
+              font-size: 12px;
+            }
+            h2 { 
+              color: #444; 
+              border-bottom: 2px solid #ddd; 
+              padding-bottom: 5px;
+              margin-top: 25px;
+            }
+            .table-section { 
+              margin-bottom: 20px; 
+              page-break-inside: avoid;
+            }
+            .table-title { 
+              font-weight: bold; 
+              font-size: 16px; 
+              color: #333;
+              margin-bottom: 8px;
+            }
+            .guest-list { 
+              margin-left: 20px; 
+            }
+            .guest-item { 
+              margin: 3px 0; 
+            }
+            .stats { 
+              margin-top: 30px; 
+              border-top: 2px solid #ddd; 
+              padding-top: 15px;
+            }
+            .stats h2 { 
+              border: none; 
+              margin-top: 0; 
+            }
+            .stat-item { 
+              margin: 5px 0; 
+              margin-left: 20px;
+            }
+            @media print {
+              body { margin: 0; }
+              .table-section { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>${currentProject.name}</h1>
+          <div class="timestamp">生成时间: ${new Date().toLocaleString('zh-CN')}</div>
+          
+          <h2>座位安排详情</h2>
+      `;
+      
+      // 添加桌子信息
+      tables.forEach((table) => {
+        htmlContent += `
+          <div class="table-section">
+            <div class="table-title">${table.tableName} (${table.guests.length}人)</div>
+            <div class="guest-list">
+        `;
+        
+        if (table.guests.length > 0) {
+          table.guests.forEach((guest, index) => {
+            htmlContent += `<div class="guest-item">${index + 1}. ${guest.name}</div>`;
+          });
+        } else {
+          htmlContent += `<div class="guest-item">(暂无宾客)</div>`;
+        }
+        
+        htmlContent += `
+            </div>
+          </div>
+        `;
+      });
+      
+      // 添加未分配宾客
+      if (unassignedGuests.length > 0) {
+        htmlContent += `
+          <div class="table-section">
+            <div class="table-title">未分配宾客 (${unassignedGuests.length}人)</div>
+            <div class="guest-list">
+        `;
+        
+        unassignedGuests.forEach((guest, index) => {
+          htmlContent += `<div class="guest-item">${index + 1}. ${guest.name}</div>`;
+        });
+        
+        htmlContent += `
+            </div>
+          </div>
+        `;
       }
-    });
+      
+      // 添加统计信息
+      const totalGuests = tables.reduce((sum, table) => sum + table.guests.length, 0) + unassignedGuests.length;
+      const assignedGuests = tables.reduce((sum, table) => sum + table.guests.length, 0);
+      
+      htmlContent += `
+          <div class="stats">
+            <h2>统计信息</h2>
+            <div class="stat-item">总桌数: ${tables.length}</div>
+            <div class="stat-item">总宾客数: ${totalGuests}</div>
+            <div class="stat-item">已安排宾客: ${assignedGuests}</div>
+            <div class="stat-item">未安排宾客: ${unassignedGuests.length}</div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      // 创建隐藏的iframe来渲染HTML
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '794px'; // A4宽度
+      iframe.style.height = '1123px'; // A4高度
+      document.body.appendChild(iframe);
+      
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error('无法创建PDF渲染环境');
+      }
+      
+      iframeDoc.open();
+      iframeDoc.write(htmlContent);
+      iframeDoc.close();
+      
+      // 等待内容加载完成后截图
+      setTimeout(() => {
+        html2canvas(iframeDoc.body, { 
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          width: 794,
+          height: 1123
+        }).then(canvas => {
+          try {
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'px', [794, 1123]);
+            
+            // 计算图片尺寸以适应PDF页面
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            
+            // 如果内容高度超过一页，需要分页
+            if (imgHeight > pdfHeight) {
+              let remainingHeight = imgHeight;
+              let yOffset = 0;
+              
+              while (remainingHeight > 0) {
+                const pageHeight = Math.min(remainingHeight, pdfHeight);
+                
+                // 创建新页面（除了第一页）
+                if (yOffset > 0) {
+                  pdf.addPage();
+                }
+                
+                // 裁剪并添加图片
+                const cropCanvas = document.createElement('canvas');
+                const cropCtx = cropCanvas.getContext('2d');
+                cropCanvas.width = imgWidth;
+                cropCanvas.height = pageHeight;
+                
+                if (cropCtx) {
+                  cropCtx.drawImage(canvas, 0, -yOffset);
+                  const cropImgData = cropCanvas.toDataURL('image/png');
+                  pdf.addImage(cropImgData, 'PNG', 0, 0, pdfWidth, pageHeight);
+                }
+                
+                yOffset += pageHeight;
+                remainingHeight -= pageHeight;
+              }
+            } else {
+              pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+            }
+            
+            pdf.save(`${currentProject.name}_座位安排.pdf`);
+            showNotification('PDF导出成功！');
+            
+            // 清理临时元素
+            document.body.removeChild(iframe);
+            
+          } catch (e) {
+            console.error('PDF生成错误:', e);
+            showNotification('导出PDF失败，请重试', 'error');
+            document.body.removeChild(iframe);
+          }
+        }).catch(error => {
+          console.error('截图失败:', error);
+          showNotification('导出PDF失败，请重试', 'error');
+          document.body.removeChild(iframe);
+        });
+      }, 1000); // 给HTML渲染1秒时间
+      
+    } catch (error) {
+      console.error('PDF导出错误:', error);
+      showNotification('导出PDF失败，请重试', 'error');
+    }
   };
 
   const findContainer = (id: string) => {
@@ -321,7 +636,7 @@ export default function DashboardPage() {
     const originalContainerId = findContainer(activeId);
     const overContainerId = findContainer(overId);
 
-    if (!originalContainerId || !overContainerId) return;
+  if (!originalContainerId || !overContainerId) return;
 
     if (originalContainerId === overContainerId) {
         if (activeId === overId) return;
@@ -360,7 +675,13 @@ export default function DashboardPage() {
         if (!draggedGuest) return;
 
         if (overContainerId === 'unassigned-area') {
-            nextUnassigned.push(draggedGuest);
+            // 拖回未分配区：若目标 guest 存在则按其位置插入，否则追加
+            const overGuestIndex = nextUnassigned.findIndex(g => g.id === overId);
+            if (overGuestIndex !== -1) {
+              nextUnassigned.splice(overGuestIndex, 0, draggedGuest);
+            } else {
+              nextUnassigned.push(draggedGuest);
+            }
         } else {
             const table = nextTables.find((t: SeatingTable) => t.id === overContainerId);
             if(table) {
@@ -390,6 +711,22 @@ export default function DashboardPage() {
     };
     initialize();
   }, [router, fetchProjectsAndLoadFirst]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '您有未保存的更改，确定要离开吗？';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (autoSaveTimeout.current) {
+        clearTimeout(autoSaveTimeout.current);
+      }
+    };
+  }, [hasUnsavedChanges]);
 
   if (isLoading) {
     return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white text-xl">正在加载您的工作区...</div>;
@@ -438,6 +775,64 @@ export default function DashboardPage() {
         </>}
       </Modal>}
 
+      {/* 删除确认对话框 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-20 backdrop-blur-lg flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700 shadow-2xl">
+            <h3 className="text-xl font-bold mb-4 text-white">确认操作</h3>
+            <p className="text-gray-300 mb-6">
+              请选择对宾客 "<span className="font-semibold text-white">{deleteConfirm.guestName}</span>" 的操作：
+            </p>
+            <div className="flex flex-col space-y-3">
+              <button 
+                onClick={() => handleConfirmDelete('move')}
+                className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                移动到未分配区
+              </button>
+              <button 
+                onClick={() => handleConfirmDelete('delete')}
+                className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                彻底删除宾客
+              </button>
+              <button 
+                onClick={() => setDeleteConfirm(null)}
+                className="w-full px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 未分配宾客删除确认对话框 */}
+      {deleteUnassignedConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-20 backdrop-blur-lg flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700 shadow-2xl">
+            <h3 className="text-xl font-bold mb-4 text-white">确认删除</h3>
+            <p className="text-gray-300 mb-6">
+              您确定要永久删除宾客 "<span className="font-semibold text-white">{deleteUnassignedConfirm.guestName}</span>" 吗？
+            </p>
+            <div className="flex flex-col space-y-3">
+              <button 
+                onClick={handleConfirmDeleteUnassigned}
+                className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                确认删除
+              </button>
+              <button 
+                onClick={() => setDeleteUnassignedConfirm(null)}
+                className="w-full px-4 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {notification && <div className={`fixed top-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 transition-transform transform-gpu ${notification ? 'translate-x-0' : 'translate-x-full'} ${notification?.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>{notification.message}</div>}
       
       <aside className="w-64 bg-gray-800 p-4 flex flex-col">
@@ -461,15 +856,22 @@ export default function DashboardPage() {
 
       <main id="main-editor-area" className="flex-1 p-8 overflow-y-auto relative bg-gray-900">
         {currentProject && (
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={closestCenter}>
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={rectIntersection}>
             <input data-testid="project-name" type="text" value={currentProject.name} onChange={(e) => { setCurrentProject(p => p ? {...p, name: e.target.value} : null); markChanges(); }} className="text-3xl font-bold bg-transparent focus:outline-none focus:bg-gray-700 rounded-md px-2 py-1 mb-6 w-full"/>
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
               <div className="lg:col-span-1 bg-gray-800 bg-opacity-50 rounded-lg p-4">
                 <h3 className="font-bold text-lg mb-4 text-center">未分配宾客 ({unassignedGuests.length})</h3>
                 <SortableContext id="unassigned-area" items={unassignedGuests.map(g => g.id)} strategy={verticalListSortingStrategy}>
-                  <div data-testid="unassigned-list" className="space-y-3 min-h-[100px]">
-                    {unassignedGuests.map(guest => <DraggableGuest key={guest.id} guest={guest} onDelete={handleDeleteGuest}/>)}
+                  <DroppableContainer id="unassigned-area" className="min-h-[100px]">
+                  <div data-testid="unassigned-list" className="space-y-3">
+                    {unassignedGuests.length === 0 && (
+                      <div className="text-center text-gray-500 text-sm py-4 border-2 border-dashed border-gray-600 rounded-md">
+                        将宾客拖到此处
+                      </div>
+                    )}
+                    {unassignedGuests.map(guest => <DraggableGuest key={guest.id} guest={guest} onDelete={(guestId) => handleDeleteGuest(guestId)}/>)}
                   </div>
+                  </DroppableContainer>
                 </SortableContext>
               </div>
               <div className="lg:col-span-3">
@@ -481,7 +883,16 @@ export default function DashboardPage() {
                         <button onClick={() => handleDeleteTable(table.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-opacity ml-2">🗑️</button>
                       </div>
                       <SortableContext id={table.id} items={table.guests.map(g => g.id)} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-3 min-h-[50px]">{table.guests.map(guest => <DraggableGuest key={guest.id} guest={guest} onDelete={handleDeleteGuest} />)}</div>
+                        <DroppableContainer id={table.id} className="min-h-[50px]">
+                        <div className="space-y-3">
+                          {table.guests.length === 0 && (
+                            <div className="text-center text-gray-500 text-sm py-4 border-2 border-dashed border-gray-600 rounded-md">
+                              将宾客拖到此处
+                            </div>
+                          )}
+                          {table.guests.map(guest => <DraggableGuest key={guest.id} guest={guest} onDelete={(guestId) => handleRemoveGuestFromTable(guestId, table.id)} tableId={table.id} />)}
+                        </div>
+                        </DroppableContainer>
                       </SortableContext>
                     </div>
                   ))}
@@ -496,8 +907,28 @@ export default function DashboardPage() {
       <aside className="w-72 bg-gray-800 p-6 flex flex-col gap-y-4">
         <h3 className="text-xl font-bold mb-2">控制面板</h3>
         <button data-testid="btn-save-project" onClick={handleSaveProject} disabled={isSaving || !hasUnsavedChanges} className="w-full p-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 font-semibold transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed">
-          {isSaving ? '保存中...' : (hasUnsavedChanges ? '💾 保存项目*' : '💾 已是最新')}
+          {isSaving ? '保存中...' : (hasUnsavedChanges ? '💾 保存更改*' : '💾 全部已保存')}
         </button>
+        <label className="flex items-center gap-2 text-sm text-gray-300 select-none">
+          <input
+            data-testid="toggle-autosave"
+            type="checkbox"
+            className="accent-indigo-500"
+            checked={autoSaveEnabled}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              setAutoSaveEnabled(enabled);
+              if (autoSaveTimeout.current) {
+                clearTimeout(autoSaveTimeout.current);
+              }
+              // 若开启自动保存且存在未保存更改，触发一次延迟保存
+              if (enabled && hasUnsavedChanges && !isSaving) {
+                autoSaveTimeout.current = setTimeout(() => { handleSaveProject(); }, 800);
+              }
+            }}
+          />
+          自动保存
+        </label>
         <button data-testid="btn-ai-seating" onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }} className="w-full p-3 rounded-lg bg-blue-600 hover:bg-blue-700 font-semibold transition-colors">🤖 AI 智能排座</button>
         <button data-testid="btn-export-pdf" onClick={handleExportPdf} className="w-full p-3 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-colors">导出为 PDF</button>
         <hr className="border-gray-700 my-2" />
@@ -514,4 +945,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
