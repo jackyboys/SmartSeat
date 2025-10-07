@@ -10,10 +10,16 @@ import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-ki
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { v4 as uuidv4 } from 'uuid';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import pdfMake from 'pdfmake/build/pdfmake';
+import { pdfFonts } from '@/utils/pdfFonts';
+
+// 配置pdfMake字体
+pdfMake.fonts = {
+  NotoSansSC: pdfFonts.NotoSansSC,
+  Roboto: pdfFonts.Roboto
+};
 
 // 主题的配置
 const theme = {
@@ -953,220 +959,411 @@ export default function DashboardPage() {
     setSelectedPlanId(null);
   };
   
+  // ✅ 新的PDF导出函数 - 使用pdfmake
   const handleExportPdf = () => {
-    if (!currentProject) { 
-      showNotification('请先选择一个项目', 'error'); 
-      return; 
+    if (!currentProject) {
+      showNotification('请先选择一个项目', 'error');
+      return;
     }
-    
+
     showNotification('正在生成PDF，请稍候...');
-    
+
     try {
-      let htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              line-height: 1.6; 
-              margin: 20px; 
-              font-size: 14px;
-            }
-            h1 { 
-              text-align: center; 
-              color: #333; 
-              margin-bottom: 10px;
-              font-size: 24px;
-            }
-            .timestamp { 
-              text-align: center; 
-              color: #666; 
-              margin-bottom: 30px;
-              font-size: 12px;
-            }
-            h2 { 
-              color: #444; 
-              border-bottom: 2px solid #ddd; 
-              padding-bottom: 5px;
-              margin-top: 25px;
-            }
-            .table-section { 
-              margin-bottom: 20px; 
-              page-break-inside: avoid;
-            }
-            .table-title { 
-              font-weight: bold; 
-              font-size: 16px; 
-              color: #333;
-              margin-bottom: 8px;
-            }
-            .guest-list { 
-              margin-left: 20px; 
-            }
-            .guest-item { 
-              margin: 3px 0; 
-            }
-            .stats { 
-              margin-top: 30px; 
-              border-top: 2px solid #ddd; 
-              padding-top: 15px;
-            }
-            .stats h2 { 
-              border: none; 
-              margin-top: 0; 
-            }
-            .stat-item { 
-              margin: 5px 0; 
-              margin-left: 20px;
-            }
-            @media print {
-              body { margin: 0; }
-              .table-section { page-break-inside: avoid; }
-            }
-          </style>
-        </head>
-        <body>
-          <h1>${currentProject.name}</h1>
-          <div class="timestamp">生成时间: ${new Date().toLocaleString('zh-CN')}</div>
-          
-          <h2>座位安排详情</h2>
-      `;
-      
-      tables.forEach((table) => {
-        htmlContent += `
-          <div class="table-section">
-            <div class="table-title">${table.tableName} (${table.guests.length}人)</div>
-            <div class="guest-list">
-        `;
-        
-        if (table.guests.length > 0) {
-          table.guests.forEach((guest, index) => {
-            htmlContent += `<div class="guest-item">${index + 1}. ${guest.name}</div>`;
-          });
-        } else {
-          htmlContent += `<div class="guest-item">(暂无宾客)</div>`;
-        }
-        
-        htmlContent += `
-            </div>
-          </div>
-        `;
-      });
-      
-      if (unassignedGuests.length > 0) {
-        htmlContent += `
-          <div class="table-section">
-            <div class="table-title">未分配宾客 (${unassignedGuests.length}人)</div>
-            <div class="guest-list">
-        `;
-        
-        unassignedGuests.forEach((guest, index) => {
-          htmlContent += `<div class="guest-item">${index + 1}. ${guest.name}</div>`;
-        });
-        
-        htmlContent += `
-            </div>
-          </div>
-        `;
-      }
-      
+      // 计算统计数据
       const totalGuests = tables.reduce((sum, table) => sum + table.guests.length, 0) + unassignedGuests.length;
       const assignedGuests = tables.reduce((sum, table) => sum + table.guests.length, 0);
-      
-      htmlContent += `
-          <div class="stats">
-            <h2>统计信息</h2>
-            <div class="stat-item">总桌数: ${tables.length}</div>
-            <div class="stat-item">总宾客数: ${totalGuests}</div>
-            <div class="stat-item">已安排宾客: ${assignedGuests}</div>
-            <div class="stat-item">未安排宾客: ${unassignedGuests.length}</div>
-          </div>
-        </body>
-        </html>
-      `;
-      
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.left = '-9999px';
-      iframe.style.width = '794px';
-      iframe.style.height = '1123px';
-      document.body.appendChild(iframe);
-      
-      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-      if (!iframeDoc) {
-        throw new Error('无法创建PDF渲染环境');
-      }
-      
-      iframeDoc.open();
-      iframeDoc.write(htmlContent);
-      iframeDoc.close();
-      
-      setTimeout(() => {
-        html2canvas(iframeDoc.body, { 
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          width: 794,
-          height: 1123
-        }).then(canvas => {
-          try {
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'px', [794, 1123]);
-            
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            
-            if (imgHeight > pdfHeight) {
-              let remainingHeight = imgHeight;
-              let yOffset = 0;
-              
-              while (remainingHeight > 0) {
-                const pageHeight = Math.min(remainingHeight, pdfHeight);
-                
-                if (yOffset > 0) {
-                  pdf.addPage();
+
+      // 定义文档结构
+      const docDefinition: any = {
+        // 页面设置
+        pageSize: 'A4',
+        pageMargins: [40, 60, 40, 60],
+        
+        // 内容
+        content: [
+          // 标题
+          {
+            text: currentProject.name,
+            style: 'header',
+            alignment: 'center',
+            margin: [0, 0, 0, 10]
+          },
+          
+          // 时间戳
+          {
+            text: `生成时间: ${new Date().toLocaleString('zh-CN', { 
+              year: 'numeric', 
+              month: '2-digit', 
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false 
+            })}`,
+            style: 'timestamp',
+            alignment: 'center',
+            margin: [0, 0, 0, 30]
+          },
+
+          // 座位安排详情标题
+          {
+            text: '座位安排详情',
+            style: 'sectionHeader',
+            margin: [0, 0, 0, 15]
+          },
+
+          // 桌子信息
+          ...tables.map((table, tableIndex) => {
+            const fillRate = table.capacity ? (table.guests.length / table.capacity * 100).toFixed(0) : 0;
+            const statusColor = table.guests.length >= table.capacity ? '#ef4444' :
+                              table.guests.length >= table.capacity * 0.8 ? '#f59e0b' :
+                              '#10b981';
+
+            return {
+              stack: [
+                // 桌子标题
+                {
+                  columns: [
+                    {
+                      text: `${table.tableName}`,
+                      style: 'tableTitle',
+                      width: '*'
+                    },
+                    {
+                      text: `${table.guests.length}/${table.capacity}人`,
+                      style: 'tableCapacity',
+                      color: statusColor,
+                      width: 'auto'
+                    },
+                    {
+                      text: `(${fillRate}%)`,
+                      style: 'tableFillRate',
+                      color: statusColor,
+                      width: 'auto',
+                      margin: [5, 0, 0, 0]
+                    }
+                  ],
+                  margin: [0, 0, 0, 8]
+                },
+
+                // 宾客列表
+                ...(table.guests.length > 0 ? [
+                  {
+                    ul: table.guests.map((guest, index) => {
+                      const statusText = guest.status === 'confirmed' ? '✓' :
+                                       guest.status === 'cancelled' ? '✕' :
+                                       '○';
+                      const statusColor = guest.status === 'confirmed' ? '#10b981' :
+                                        guest.status === 'cancelled' ? '#ef4444' :
+                                        '#f59e0b';
+                      
+                      return {
+                        text: [
+                          { text: `${index + 1}. `, style: 'guestNumber' },
+                          { text: guest.name, style: 'guestName' },
+                          { text: ` ${statusText}`, color: statusColor, bold: true }
+                        ]
+                      };
+                    }),
+                    margin: [20, 0, 0, 15]
+                  }
+                ] : [
+                  {
+                    text: '(暂无宾客)',
+                    style: 'emptyText',
+                    margin: [20, 0, 0, 15]
+                  }
+                ])
+              ],
+              unbreakable: true, // 避免分页时截断桌子
+              margin: [0, 0, 0, 10]
+            };
+          }),
+
+          // 未分配宾客
+          ...(unassignedGuests.length > 0 ? [
+            {
+              text: '未分配宾客',
+              style: 'sectionHeader',
+              margin: [0, 20, 0, 15],
+              pageBreak: tables.length > 8 ? 'before' : undefined // 如果桌子太多，新起一页
+            },
+            {
+              columns: [
+                {
+                  text: `共 ${unassignedGuests.length} 人`,
+                  style: 'tableCapacity',
+                  color: '#ef4444',
+                  width: 'auto'
                 }
+              ],
+              margin: [0, 0, 0, 8]
+            },
+            {
+              ul: unassignedGuests.map((guest, index) => {
+                const statusText = guest.status === 'confirmed' ? '✓' :
+                                 guest.status === 'cancelled' ? '✕' :
+                                 '○';
+                const statusColor = guest.status === 'confirmed' ? '#10b981' :
+                                  guest.status === 'cancelled' ? '#ef4444' :
+                                  '#f59e0b';
                 
-                const cropCanvas = document.createElement('canvas');
-                const cropCtx = cropCanvas.getContext('2d');
-                cropCanvas.width = imgWidth;
-                cropCanvas.height = pageHeight;
-                
-                if (cropCtx) {
-                  cropCtx.drawImage(canvas, 0, -yOffset);
-                  const cropImgData = cropCanvas.toDataURL('image/png');
-                  pdf.addImage(cropImgData, 'PNG', 0, 0, pdfWidth, pageHeight);
-                }
-                
-                yOffset += pageHeight;
-                remainingHeight -= pageHeight;
-              }
-            } else {
-              pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+                return {
+                  text: [
+                    { text: `${index + 1}. `, style: 'guestNumber' },
+                    { text: guest.name, style: 'guestName' },
+                    { text: ` ${statusText}`, color: statusColor, bold: true }
+                  ]
+                };
+              }),
+              margin: [20, 0, 0, 20]
             }
-            
-            pdf.save(`${currentProject.name}_座位安排.pdf`);
-            showNotification('PDF导出成功！');
-            
-            document.body.removeChild(iframe);
-            
-          } catch (e) {
-            console.error('PDF生成错误:', e);
-            showNotification('导出PDF失败，请重试', 'error');
-            document.body.removeChild(iframe);
+          ] : []),
+
+          // 分隔线
+          {
+            canvas: [
+              {
+                type: 'line',
+                x1: 0, y1: 0,
+                x2: 515, y2: 0,
+                lineWidth: 1,
+                lineColor: '#e5e7eb'
+              }
+            ],
+            margin: [0, 20, 0, 20]
+          },
+
+          // 统计信息
+          {
+            text: '统计信息',
+            style: 'sectionHeader',
+            margin: [0, 0, 0, 15]
+          },
+
+          // 统计表格
+          {
+            columns: [
+              {
+                width: '50%',
+                stack: [
+                  {
+                    text: '基础统计',
+                    style: 'subHeader',
+                    margin: [0, 0, 0, 10]
+                  },
+                  {
+                    table: {
+                      widths: ['*', 'auto'],
+                      body: [
+                        [
+                          { text: '总桌数', style: 'statLabel' },
+                          { text: stats.tableCount.toString(), style: 'statValue', alignment: 'right' }
+                        ],
+                        [
+                          { text: '总宾客数', style: 'statLabel' },
+                          { text: totalGuests.toString(), style: 'statValue', alignment: 'right' }
+                        ],
+                        [
+                          { text: '已安排宾客', style: 'statLabel' },
+                          { text: assignedGuests.toString(), style: 'statValue', alignment: 'right', color: '#10b981' }
+                        ],
+                        [
+                          { text: '未安排宾客', style: 'statLabel' },
+                          { text: unassignedGuests.length.toString(), style: 'statValue', alignment: 'right', color: unassignedGuests.length > 0 ? '#ef4444' : '#6b7280' }
+                        ],
+                        [
+                          { text: '平均每桌', style: 'statLabel' },
+                          { text: stats.avgGuestsPerTable.toString(), style: 'statValue', alignment: 'right' }
+                        ]
+                      ]
+                    },
+                    layout: {
+                      hLineWidth: () => 0.5,
+                      vLineWidth: () => 0,
+                      hLineColor: () => '#e5e7eb',
+                      paddingLeft: () => 8,
+                      paddingRight: () => 8,
+                      paddingTop: () => 6,
+                      paddingBottom: () => 6
+                    }
+                  }
+                ]
+              },
+              {
+                width: '50%',
+                stack: [
+                  {
+                    text: '宾客状态',
+                    style: 'subHeader',
+                    margin: [0, 0, 0, 10]
+                  },
+                  {
+                    table: {
+                      widths: ['*', 'auto'],
+                      body: [
+                        [
+                          { text: '已确认', style: 'statLabel' },
+                          { text: stats.confirmedCount.toString(), style: 'statValue', alignment: 'right', color: '#10b981' }
+                        ],
+                        [
+                          { text: '未确认', style: 'statLabel' },
+                          { text: stats.unconfirmedCount.toString(), style: 'statValue', alignment: 'right', color: '#f59e0b' }
+                        ],
+                        [
+                          { text: '已取消', style: 'statLabel' },
+                          { text: stats.cancelledCount.toString(), style: 'statValue', alignment: 'right', color: '#ef4444' }
+                        ]
+                      ]
+                    },
+                    layout: {
+                      hLineWidth: () => 0.5,
+                      vLineWidth: () => 0,
+                      hLineColor: () => '#e5e7eb',
+                      paddingLeft: () => 8,
+                      paddingRight: () => 8,
+                      paddingTop: () => 6,
+                      paddingBottom: () => 6
+                    }
+                  }
+                ]
+              }
+            ],
+            columnGap: 20
+          },
+
+          // 关系规则（如果有）
+          ...(currentProject.layout_data?.rules?.notTogether && currentProject.layout_data.rules.notTogether.length > 0 ? [
+            {
+              text: '座位规则',
+              style: 'sectionHeader',
+              margin: [0, 20, 0, 15]
+            },
+            {
+              text: '以下宾客不宜同桌：',
+              style: 'normalText',
+              margin: [0, 0, 0, 8]
+            },
+            {
+              ul: currentProject.layout_data.rules.notTogether.map(rule => {
+                const name1 = guestNameMap.get(rule[0]) || '未知';
+                const name2 = guestNameMap.get(rule[1]) || '未知';
+                return `${name1} ↔ ${name2}`;
+              }),
+              margin: [20, 0, 0, 0]
+            }
+          ] : [])
+        ],
+
+        // 样式定义
+        styles: {
+          header: {
+            fontSize: 24,
+            bold: true,
+            color: '#1e40af'
+          },
+          timestamp: {
+            fontSize: 9,
+            color: '#6b7280',
+            italics: true
+          },
+          sectionHeader: {
+            fontSize: 16,
+            bold: true,
+            color: '#374151',
+            decoration: 'underline',
+            decorationColor: '#e5e7eb'
+          },
+          subHeader: {
+            fontSize: 12,
+            bold: true,
+            color: '#4b5563'
+          },
+          tableTitle: {
+            fontSize: 13,
+            bold: true,
+            color: '#1f2937'
+          },
+          tableCapacity: {
+            fontSize: 11,
+            bold: true
+          },
+          tableFillRate: {
+            fontSize: 9
+          },
+          guestNumber: {
+            fontSize: 10,
+            color: '#9ca3af'
+          },
+          guestName: {
+            fontSize: 10,
+            color: '#374151'
+          },
+          emptyText: {
+            fontSize: 9,
+            color: '#9ca3af',
+            italics: true
+          },
+          statLabel: {
+            fontSize: 10,
+            color: '#4b5563'
+          },
+          statValue: {
+            fontSize: 10,
+            bold: true,
+            color: '#1f2937'
+          },
+          normalText: {
+            fontSize: 10,
+            color: '#374151'
           }
-        }).catch(error => {
-          console.error('截图失败:', error);
-          showNotification('导出PDF失败，请重试', 'error');
-          document.body.removeChild(iframe);
-        });
-      }, 1000);
+        },
+
+        // 默认样式
+        defaultStyle: {
+          font: 'NotoSansSC',
+          fontSize: 10,
+          lineHeight: 1.3
+        },
+
+        // 页眉页脚
+        header: (currentPage: number, pageCount: number) => {
+          return {
+            text: currentProject.name,
+            alignment: 'center',
+            margin: [0, 20, 0, 0],
+            fontSize: 9,
+            color: '#9ca3af'
+          };
+        },
+        footer: (currentPage: number, pageCount: number) => {
+          return {
+            columns: [
+              {
+                text: `生成自 SmartSeat`,
+                alignment: 'left',
+                margin: [40, 0, 0, 0],
+                fontSize: 8,
+                color: '#9ca3af'
+              },
+              {
+                text: `第 ${currentPage} 页 / 共 ${pageCount} 页`,
+                alignment: 'right',
+                margin: [0, 0, 40, 0],
+                fontSize: 8,
+                color: '#9ca3af'
+              }
+            ],
+            margin: [0, 10, 0, 0]
+          };
+        }
+      };
+
+      // 生成并下载PDF
+      pdfMake.createPdf(docDefinition).download(`${currentProject.name}_座位安排.pdf`);
       
+      showNotification('PDF导出成功！');
+
     } catch (error) {
       console.error('PDF导出错误:', error);
       showNotification('导出PDF失败，请重试', 'error');
