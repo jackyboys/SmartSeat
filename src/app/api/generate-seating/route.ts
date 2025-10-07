@@ -2,47 +2,95 @@ import { NextResponse } from 'next/server';
 
 type Table = { tableName: string; guests: string[] }
 
-function fallbackGenerate(guestList: string, tableSize = 10): { tables: Table[] } {
-  // 基础策略：
-  // - 按行拆分姓名，忽略空行
-  // - 简单保留括号备注，仅用于展示
+interface SeatingPlan {
+  id: string;
+  name: string;
+  score: number;
+  tables: Table[];
+  analysis: string;
+  scenario: string;
+}
+
+function fallbackGenerate(guestList: string, planCount: number = 1, tableSize = 10): { plans: SeatingPlan[] } {
   const lines = guestList
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean)
 
-  const tables: Table[] = []
-  let idx = 0
-  while (idx < lines.length) {
-    const chunk = lines.slice(idx, idx + tableSize)
-    const tableNo = Math.floor(idx / tableSize) + 1
-    tables.push({ tableName: `第${tableNo}桌`, guests: chunk })
-    idx += tableSize
+  const plans: SeatingPlan[] = [];
+
+  for (let planIndex = 0; planIndex < planCount; planIndex++) {
+    // 为每个方案创建不同的排列
+    const shuffledLines = [...lines];
+    if (planIndex > 0) {
+      // 对后续方案进行洗牌，创建不同组合
+      for (let i = shuffledLines.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledLines[i], shuffledLines[j]] = [shuffledLines[j], shuffledLines[i]];
+      }
+    }
+
+    const tables: Table[] = []
+    let idx = 0
+    while (idx < shuffledLines.length) {
+      const chunk = shuffledLines.slice(idx, idx + tableSize)
+      const tableNo = Math.floor(idx / tableSize) + 1
+      tables.push({ tableName: `第${tableNo}桌`, guests: chunk })
+      idx += tableSize
+    }
+
+    plans.push({
+      id: `plan-${planIndex + 1}`,
+      name: planIndex === 0 ? '推荐方案' : `方案${planIndex + 1}`,
+      score: 85 + Math.random() * 10, // 模拟评分
+      tables,
+      analysis: planIndex === 0 ? '基于默认分组策略' : `优化排列方案${planIndex + 1}`,
+      scenario: planIndex === 0 ? '适合大多数场合' : '备选方案'
+    });
   }
-  return { tables }
+
+  return { plans }
 }
 
-// 确保我们使用的是 Edge Runtime，它在 Vercel 上性能更好且免费
 export const runtime = 'edge';
 
 export async function POST(request: Request) {
   try {
-    // 1. 从前端发来的请求中解析出宾客名单
-    const { guestList } = await request.json();
+    // 支持单方案和多方案请求
+    const { guestList, planCount = 1 } = await request.json();
 
     if (!guestList) {
       return NextResponse.json({ error: '宾客名单不能为空' }, { status: 400 });
     }
 
-    // 0. 环境变量检查：DeepSeek API Key 必须配置在服务器环境中（.env.local）
     const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
-      // 无密钥时直接降级为本地算法，便于本地演示与开发
-      return NextResponse.json({ ...fallbackGenerate(guestList), source: 'fallback', reason: 'no_api_key' });
+      // 使用本地算法生成多方案
+      const result = fallbackGenerate(guestList, planCount);
+      return NextResponse.json({ 
+        ...result, 
+        source: 'fallback', 
+        reason: 'no_api_key' 
+      });
     }
 
-    // 2. 这是魔法发生的地方：我们构造一个给 AI 的指令 (Prompt)
-    const prompt = `
+    // 构建AI提示，支持多方案生成
+    const prompt = planCount > 1 ? `
+      你是专业的婚礼策划师，请为以下宾客生成${planCount}种不同的座位安排方案。
+
+      宾客名单：
+      ${guestList}
+
+      要求：
+      1. 每桌最多10人
+      2. 每个方案要有不同的分组策略
+      3. 返回JSON格式：{ "plans": [{ "name": "方案名", "score": 85-95, "analysis": "分析", "scenario": "适用场景", "tables": [{"tableName": "桌名", "guests": ["姓名"]}] }] }
+
+      方案策略建议：
+      - 方案1：按年龄相近分组
+      - 方案2：按关系亲密度分组  
+      - 方案3：混合分组促进交流
+    ` : `
       你是一个专业的活动策划 AI 助手，名为 SmartSeat。
       你的任务是根据提供的宾客名单，生成一个结构化的婚宴座位安排 JSON 对象。
       规则：
@@ -59,59 +107,84 @@ export async function POST(request: Request) {
       请根据以上名单生成座位安排。
     `;
 
-    // 3. 调用 DeepSeek API
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // 从服务器环境变量中安全地读取 API Key
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat', // 使用 DeepSeek 的通用聊天模型
+        model: 'deepseek-chat',
         messages: [
-          { role: 'system', content: '你是一个专业的活动策划 AI 助手，名为 SmartSeat。你的任务是输出严格的 JSON 格式。' },
-          { role: 'user', content: prompt },
+          {
+            role: 'system',
+            content: planCount > 1 
+              ? '你是专业的婚礼座位安排助手，擅长生成多种不同策略的座位方案。'
+              : '你是一个专业的活动策划 AI 助手，名为 SmartSeat。'
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
         ],
-        // 强制要求 AI 输出 JSON 格式
-        response_format: { type: "json_object" }
+        temperature: planCount > 1 ? 0.8 : 0.7, // 多方案时增加随机性
+        max_tokens: planCount > 1 ? 3000 : 2000,
       }),
     });
 
     if (!response.ok) {
-      // 如果 DeepSeek API 返回错误，我们也向前端返回错误
-      let errorMessage = 'AI 服务调用失败';
-      try {
-        const errorData = await response.json();
-        console.error('DeepSeek API Error:', errorData);
-        if (errorData?.error?.message) errorMessage = errorData.error.message;
-      } catch {}
-      if (response.status === 401 || response.status === 403) {
-        errorMessage = 'AI 密钥无效或未配置（请检查 DEEPSEEK_API_KEY）';
-      }
-      // 远端失败时尝试降级本地算法以不中断用户流程
-      const downgraded = fallbackGenerate(guestList)
-      return NextResponse.json({ ...downgraded, source: 'fallback', reason: 'remote_error', warning: errorMessage }, { status: 200 });
+      throw new Error(`DeepSeek API 调用失败: ${response.status}`);
     }
 
     const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
 
-    // 4. 解析 AI 返回的结果并规范化为 { tables: [...] }
-    // AI 返回的 JSON 字符串在 choices[0].message.content 中
-    const parsed = JSON.parse(data.choices[0].message.content);
-    const tables = Array.isArray(parsed)
-      ? parsed
-      : (parsed?.tables ?? parsed?.data ?? parsed?.result ?? null);
-
-    if (!tables || !Array.isArray(tables)) {
-      // 无法解析时退回本地算法
-      return NextResponse.json({ ...fallbackGenerate(guestList), source: 'fallback', reason: 'bad_format', warning: 'AI 返回格式不正确，已使用本地规则生成' });
+    if (!content) {
+      throw new Error('AI 返回内容为空');
     }
 
-    return NextResponse.json({ tables, source: 'ai', model: 'deepseek-chat' });
+    let parsed;
+    try {
+      // 尝试提取JSON
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('无法从AI响应中提取JSON');
+      }
+    } catch (parseError) {
+      console.error('JSON解析失败，使用备用方案:', parseError);
+      return NextResponse.json(fallbackGenerate(guestList, planCount));
+    }
 
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: '服务器内部错误' }, { status: 500 });
+    // 处理单方案响应（向后兼容）
+    if (planCount === 1 && parsed.tables && !parsed.plans) {
+      return NextResponse.json({
+        tables: parsed.tables,
+        source: 'ai'
+      });
+    }
+
+    // 处理多方案响应
+    if (parsed.plans) {
+      return NextResponse.json({
+        plans: parsed.plans,
+        source: 'ai'
+      });
+    }
+
+    // 兜底处理
+    return NextResponse.json(fallbackGenerate(guestList, planCount));
+
+  } catch (error: any) {
+    console.error('生成座位方案失败:', error);
+    // 出错时也返回备用方案，而不是完全失败
+    const { guestList, planCount = 1 } = await request.json();
+    return NextResponse.json({
+      ...fallbackGenerate(guestList, planCount),
+      source: 'fallback',
+      reason: 'api_error',
+      error: error.message
+    });
   }
 }

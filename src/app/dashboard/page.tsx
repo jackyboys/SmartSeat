@@ -365,7 +365,7 @@ const StatsChart = ({ stats }: { stats: any }) => {
           <div className="grid grid-cols-5 gap-1">
             {stats.tableFillRate.slice(0, 10).map((table: any, idx: number) => (
               <div 
-                key={idx}
+                key={table.name || `table-${idx}`}
                 className={`h-8 rounded transition-all duration-300 hover:scale-110 cursor-pointer ${
                   table.rate >= 100 ? 'bg-red-500' :
                   table.rate >= 80 ? 'bg-yellow-500' :
@@ -402,6 +402,8 @@ export default function DashboardPage() {
   const [inputValue, setInputValue] = useState('');
   const [inputCapacity, setInputCapacity] = useState('10');
   const [aiGuestList, setAiGuestList] = useState('');
+  const [aiPlans, setAiPlans] = useState<any[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ guestId: string; tableId: string; guestName: string } | null>(null);
   const [deleteUnassignedConfirm, setDeleteUnassignedConfirm] = useState<{ guestId: string; guestName: string } | null>(null);
   const [ruleGuests, setRuleGuests] = useState<{ g1: string, g2: string }>({ g1: '', g2: '' });
@@ -857,32 +859,82 @@ export default function DashboardPage() {
   };
 
   const handleAiSeating = async () => {
-    if (!aiGuestList.trim()) { showNotification('宾客名单不能为空', 'error'); return; }
+    if (!aiGuestList.trim()) { 
+      showNotification('宾客名单不能为空', 'error'); 
+      return; 
+    }
+    
     setIsAiLoading(true);
     try {
       const response = await fetch('/api/generate-seating', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guestList: aiGuestList }),
+        body: JSON.stringify({ 
+          guestList: aiGuestList,
+          planCount: 3 // 生成3个方案
+        }),
       });
       const result = await response.json();
       if(!response.ok) throw new Error(result.error || 'AI 服务出错');
       
-      const aiTables: SeatingTable[] = result.tables.map((t: any) => ({
-        id: uuidv4(),
-        tableName: t.tableName,
-        guests: t.guests.map((gName: string) => ({ id: uuidv4(), name: gName, status: 'unconfirmed' })),
-        capacity: 10,
-      }));
-      setTables(aiTables);
-      setUnassignedGuests([]);
-      showNotification('AI 智能排座已完成！');
-      markChanges();
+      // 处理多方案响应
+      if (result.plans) {
+        setAiPlans(result.plans);
+        setSelectedPlanId(result.plans[0]?.id || null);
+        // 不直接应用，让用户选择
+        showNotification(`AI 生成了 ${result.plans.length} 个方案，请选择应用！`);
+      } else {
+        // 兼容单方案响应（向后兼容）
+        const aiTables: SeatingTable[] = result.tables.map((t: any) => ({
+          id: uuidv4(),
+          tableName: t.tableName,
+          guests: t.guests.map((gName: string) => ({ 
+            id: uuidv4(), 
+            name: gName, 
+            status: 'unconfirmed' 
+          })),
+          capacity: 10,
+        }));
+        setTables(aiTables);
+        setUnassignedGuests([]);
+        showNotification('AI 智能排座已完成！');
+        markChanges();
+        setIsModalOpen(null);
+      }
     } catch (err: any) {
       showNotification(err.message, 'error');
     }
     setIsAiLoading(false);
+  };
+
+  // 添加应用选中方案的函数
+  const handleApplySelectedPlan = () => {
+    console.log('当前选中的ID:', selectedPlanId);
+    console.log('可用的方案:', aiPlans);
+    const selectedPlan = aiPlans.find(p => p.id === selectedPlanId);
+    console.log('找到的方案:', selectedPlan);
+    if (!selectedPlan) {
+      showNotification('请先选择一个方案', 'error');
+      return;
+    }
+    
+    const aiTables: SeatingTable[] = selectedPlan.tables.map((t: any) => ({
+      id: uuidv4(),
+      tableName: t.tableName,
+      guests: t.guests.map((gName: string) => ({ 
+        id: uuidv4(), 
+        name: gName, 
+        status: 'unconfirmed' 
+      })),
+      capacity: 10,
+    }));
+    
+    setTables(aiTables);
+    setUnassignedGuests([]);
+    showNotification(`已应用"${selectedPlan.name}"方案！`);
+    markChanges();
     setIsModalOpen(null);
+    setAiPlans([]);
   };
   
   const handleExportPdf = () => {
@@ -1437,20 +1489,88 @@ export default function DashboardPage() {
           {isModalOpen === 'aiSeating' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">AI 智能排座</h3>
-              <textarea 
-                value={aiGuestList} 
-                onChange={e => setAiGuestList(e.target.value)} 
-                placeholder="在此粘贴您的完整宾客名单..." 
-                className="w-full p-3 bg-gray-700 rounded-lg h-60 border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200 resize-none"
-                aria-label="宾客名单"
-              />
-              <button 
-                onClick={handleAiSeating} 
-                disabled={isAiLoading} 
-                className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.primary} rounded-lg font-semibold hover:from-blue-500 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:transform-none disabled:shadow-none`}
-              >
-                {isAiLoading ? "生成中..." : "开始生成"}
-              </button>
+              
+              {aiPlans.length === 0 ? (
+                <>
+                  <textarea 
+                    value={aiGuestList} 
+                    onChange={e => setAiGuestList(e.target.value)} 
+                    placeholder="在此粘贴您的完整宾客名单..." 
+                    className="w-full p-3 bg-gray-700 rounded-lg h-60 border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200 resize-none"
+                    aria-label="宾客名单"
+                  />
+                  <button 
+                    onClick={handleAiSeating} 
+                    disabled={isAiLoading} 
+                    className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.primary} rounded-lg font-semibold hover:from-blue-500 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:transform-none disabled:shadow-none`}
+                  >
+                    {isAiLoading ? "生成中..." : "开始生成"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <p className="text-gray-300 mb-4">AI为您生成了 {aiPlans.length} 个不同的座位安排方案，请选择一个应用：</p>
+                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                      {aiPlans.map((plan, index) => (
+                        <div
+                          key={plan.id || `plan-${index}`}
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
+                            selectedPlanId === plan.id
+                              ? 'border-blue-500 bg-blue-500/10'
+                              : 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
+                          }`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('点击选择方案:', plan.id);
+                            console.log('当前选中ID:', selectedPlanId);
+                            setSelectedPlanId(plan.id);
+                          }}
+                        >
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold text-white">{plan.name}</h4>
+                            <span className="text-sm px-2 py-1 bg-green-500/20 text-green-400 rounded">
+                              评分: {Math.round(plan.score)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-400 mb-2">{plan.analysis}</p>
+                          <p className="text-xs text-gray-500">{plan.scenario}</p>
+                          <div className="mt-2 text-xs text-gray-400">
+                            共 {plan.tables.length} 桌，{plan.tables.reduce((sum: number, t: any) => sum + t.guests.length, 0)} 位宾客
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('点击重新生成按钮');
+                        setAiPlans([]);
+                        setSelectedPlanId(null);
+                      }}
+                      className="flex-1 p-3 bg-gray-600 hover:bg-gray-500 rounded-lg font-semibold transition-colors"
+                    >
+                      重新生成
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('点击应用方案按钮');
+                        handleApplySelectedPlan();
+                      }}
+                      disabled={!selectedPlanId}
+                      className={`flex-1 p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300`}
+                    >
+                      应用方案
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -1932,7 +2052,7 @@ export default function DashboardPage() {
           <div className='max-h-28 overflow-y-auto space-y-2 pr-2'>
             {(currentProject?.layout_data?.rules?.notTogether || []).map((rule, index) => (
               <div 
-                key={index} 
+                key={`${rule[0]}-${rule[1]}`} 
                 className="flex justify-between items-center bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition-all duration-200"
               >
                 <span className="text-xs truncate">
