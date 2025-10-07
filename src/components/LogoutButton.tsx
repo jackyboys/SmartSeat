@@ -8,8 +8,17 @@ export default function LogoutButton() {
   const supabase = createClient()
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.refresh() // 刷新页面，这将触发路由保护逻辑
+    try {
+      await supabase.auth.signOut()
+      // 直接跳转到首页
+      router.push('/')
+      // 强制刷新页面以确保清除所有状态
+      window.location.href = '/'
+    } catch (error) {
+      console.error('登出失败:', error)
+      // 即使登出失败，也尝试跳转到首页
+      window.location.href = '/'
+    }
   }
 
   return (
