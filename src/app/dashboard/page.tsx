@@ -253,21 +253,34 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
   );
 };
 
-const Modal = ({ children, onClose }: { children: React.ReactNode, onClose: () => void }) => (
-  <div 
-    className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 animate-fadeIn p-4" 
-    onClick={onClose}
-    role="dialog"
-    aria-modal="true"
-  >
+// ✅ 修改Modal组件，支持不同尺寸
+const Modal = ({ children, onClose, size = 'md' }: { 
+  children: React.ReactNode, 
+  onClose: () => void,
+  size?: 'md' | 'lg' | 'xl'
+}) => {
+  const sizeClasses = {
+    md: 'max-w-md',
+    lg: 'max-w-2xl',
+    xl: 'max-w-4xl'
+  };
+
+  return (
     <div 
-      className="bg-gradient-to-br from-gray-800 to-gray-900 p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700 transform transition-all duration-300" 
-      onClick={e => e.stopPropagation()}
+      className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 animate-fadeIn p-4" 
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
     >
-      {children}
+      <div 
+        className={`bg-gradient-to-br from-gray-800 to-gray-900 p-6 md:p-8 rounded-2xl shadow-2xl w-full ${sizeClasses[size]} border border-gray-700 transform transition-all duration-300 max-h-[90vh] overflow-y-auto`}
+        onClick={e => e.stopPropagation()}
+      >
+        {children}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const DroppableContainer = ({ id, className, children, isDraggingOver }: { 
   id: string; 
@@ -858,6 +871,7 @@ export default function DashboardPage() {
     markChanges();
   };
 
+  // ✅ 修复AI排座函数 - 确保每个方案都有唯一ID
   const handleAiSeating = async () => {
     if (!aiGuestList.trim()) { 
       showNotification('宾客名单不能为空', 'error'); 
@@ -871,18 +885,22 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           guestList: aiGuestList,
-          planCount: 3 // 生成3个方案
+          planCount: 3
         }),
       });
       const result = await response.json();
       if(!response.ok) throw new Error(result.error || 'AI 服务出错');
       
-      // 处理多方案响应
       if (result.plans) {
-        setAiPlans(result.plans);
-        setSelectedPlanId(result.plans[0]?.id || null);
-        // 不直接应用，让用户选择
-        showNotification(`AI 生成了 ${result.plans.length} 个方案，请选择应用！`);
+        // ✅ 确保每个方案都有唯一ID
+        const plansWithIds = result.plans.map((plan: any, index: number) => ({
+          ...plan,
+          id: plan.id || uuidv4() // 如果没有id就生成一个
+        }));
+        
+        setAiPlans(plansWithIds);
+        setSelectedPlanId(plansWithIds[0]?.id || null);
+        showNotification(`AI 生成了 ${plansWithIds.length} 个方案，请选择应用！`);
       } else {
         // 兼容单方案响应（向后兼容）
         const aiTables: SeatingTable[] = result.tables.map((t: any) => ({
@@ -907,12 +925,9 @@ export default function DashboardPage() {
     setIsAiLoading(false);
   };
 
-  // 添加应用选中方案的函数
+  // ✅ 修复应用选中方案的函数
   const handleApplySelectedPlan = () => {
-    console.log('当前选中的ID:', selectedPlanId);
-    console.log('可用的方案:', aiPlans);
     const selectedPlan = aiPlans.find(p => p.id === selectedPlanId);
-    console.log('找到的方案:', selectedPlan);
     if (!selectedPlan) {
       showNotification('请先选择一个方案', 'error');
       return;
@@ -935,6 +950,7 @@ export default function DashboardPage() {
     markChanges();
     setIsModalOpen(null);
     setAiPlans([]);
+    setSelectedPlanId(null);
   };
   
   const handleExportPdf = () => {
@@ -1271,11 +1287,9 @@ export default function DashboardPage() {
     };
     initialize();
 
-    // 监听认证状态变化
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         if (event === 'SIGNED_OUT' || !session) {
-          // 用户登出时，清除本地状态并跳转到首页
           setUser(null);
           setProjects([]);
           setCurrentProject(null);
@@ -1283,7 +1297,6 @@ export default function DashboardPage() {
           setUnassignedGuests([]);
           router.push('/');
         } else if (event === 'SIGNED_IN' && session?.user) {
-          // 用户登录时，更新用户信息
           setUser(session.user);
           fetchProjectsAndLoadFirst(session.user);
         }
@@ -1352,8 +1365,19 @@ export default function DashboardPage() {
         type={confirmDialog.type}
       />
 
+      {/* ✅ Modal根据内容类型使用不同尺寸 */}
       {isModalOpen && (
-        <Modal onClose={() => setIsModalOpen(null)}>
+        <Modal 
+          onClose={() => {
+            setIsModalOpen(null);
+            // 关闭时重置AI方案状态
+            if (isModalOpen === 'aiSeating') {
+              setAiPlans([]);
+              setSelectedPlanId(null);
+            }
+          }}
+          size={isModalOpen === 'aiSeating' && aiPlans.length > 0 ? 'lg' : 'md'}
+        >
           {isModalOpen === 'newProject' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">创建新项目</h3>
@@ -1486,6 +1510,7 @@ export default function DashboardPage() {
             </>
           )}
 
+          {/* ✅ AI排座对话框 - 修复了按钮交互问题 */}
           {isModalOpen === 'aiSeating' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">AI 智能排座</h3>
@@ -1511,22 +1536,16 @@ export default function DashboardPage() {
                 <>
                   <div className="mb-4">
                     <p className="text-gray-300 mb-4">AI为您生成了 {aiPlans.length} 个不同的座位安排方案，请选择一个应用：</p>
-                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                    <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
                       {aiPlans.map((plan, index) => (
                         <div
-                          key={plan.id || `plan-${index}`}
+                          key={plan.id}
                           className={`p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${
                             selectedPlanId === plan.id
                               ? 'border-blue-500 bg-blue-500/10'
                               : 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
                           }`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            console.log('点击选择方案:', plan.id);
-                            console.log('当前选中ID:', selectedPlanId);
-                            setSelectedPlanId(plan.id);
-                          }}
+                          onClick={() => setSelectedPlanId(plan.id)}
                         >
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-semibold text-white">{plan.name}</h4>
@@ -1545,10 +1564,7 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex gap-3 mt-6">
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('点击重新生成按钮');
+                      onClick={() => {
                         setAiPlans([]);
                         setSelectedPlanId(null);
                       }}
@@ -1557,12 +1573,7 @@ export default function DashboardPage() {
                       重新生成
                     </button>
                     <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        console.log('点击应用方案按钮');
-                        handleApplySelectedPlan();
-                      }}
+                      onClick={handleApplySelectedPlan}
                       disabled={!selectedPlanId}
                       className={`flex-1 p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300`}
                     >
