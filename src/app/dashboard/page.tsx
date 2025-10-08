@@ -152,7 +152,7 @@ const Notification = ({ notification, onClose }: {
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-            notification.type === 'success' ? 'bg-green-500/20 text-green-400' : 
+            notification.type === 'success' ? 'bg-green-500/20 text-green-400' :
             notification.type === 'error' ? 'bg-red-500/20 text-red-400' :
             'bg-blue-500/20 text-blue-400'
           }`}>
@@ -500,10 +500,13 @@ export default function DashboardPage() {
     };
   }, [tables, allGuests]);
 
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  // ==================================================================
+  // ========= 🚀 FIX: WRAP showNotification IN useCallback ==========
+  // ==================================================================
+  const showNotification = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
-  };
+  }, []);
 
   // 广播布局变更给其他协作者
   const broadcastLayoutChange = useCallback((newTables: SeatingTable[], newUnassignedGuests: Guest[]) => {
@@ -543,41 +546,79 @@ export default function DashboardPage() {
     });
   };
 
-  // ✅ 新增：获取项目成员列表
+  // ✅ 修改后的 fetchProjectMembers 函数
   const fetchProjectMembers = useCallback(async () => {
     if (!currentProject || currentProject.id < 0) {
       setProjectMembers([]);
       return;
     }
     
-    const { data, error } = await supabase
-      .from('project_members')
-      .select(`
-        id,
-        user_id,
-        role,
-        profiles:user_id (
-          email
-        )
-      `)
-      .eq('project_id', currentProject.id);
-    
-    if (error) {
-      console.error('获取成员失败:', error);
-      setProjectMembers([]);
-    } else {
-      const members = (data || []).map((m: any) => ({
+    try {
+      console.log('开始获取项目成员，项目ID:', currentProject.id);
+      
+      // 第一步：获取项目成员列表（不使用嵌套查询）
+      const { data: membersData, error: membersError } = await supabase
+        .from('project_members')
+        .select('id, user_id, role')
+        .eq('project_id', currentProject.id);
+      
+      console.log('项目成员数据:', membersData, '错误:', membersError);
+      
+      if (membersError) {
+        console.error('获取成员失败:', membersError);
+        showNotification(`获取成员失败: ${membersError.message}`, 'error');
+        setProjectMembers([]);
+        return;
+      }
+      
+      if (!membersData || membersData.length === 0) {
+        console.log('该项目没有成员');
+        setProjectMembers([]);
+        return;
+      }
+      
+      // 第二步：批量获取用户邮箱
+      const userIds = membersData.map(m => m.user_id);
+      console.log('需要查询的用户IDs:', userIds);
+      
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .in('id', userIds);
+      
+      console.log('用户profiles数据:', profilesData, '错误:', profilesError);
+      
+      if (profilesError) {
+        console.error('获取用户信息失败:', profilesError);
+        // 即使获取profile失败，也显示成员列表，只是邮箱显示为"未知"
+      }
+      
+      // 第三步：合并数据
+      const profileMap = new Map(
+        (profilesData || []).map(p => [p.id, p.email])
+      );
+      
+      const members = membersData.map(m => ({
         id: m.id,
         user_id: m.user_id,
-        email: m.profiles?.email || '未知',
+        email: profileMap.get(m.user_id) || '未知用户',
         role: m.role
       }));
+      
+      console.log('最终成员列表:', members);
       setProjectMembers(members);
+      
+    } catch (err: any) {
+      console.error('获取成员时出错:', err);
+      showNotification(`获取成员时出错: ${err.message}`, 'error');
+      setProjectMembers([]);
     }
-  }, [currentProject, supabase]);
+  }, [currentProject, supabase, showNotification]);
 
-  // ✅ 新增：邀请协作者
+  // ✅ 修改后的 handleInviteCollaborator 函数
   const handleInviteCollaborator = async () => {
+    console.log('开始邀请协作者，当前项目:', currentProject);
+    
     if (!currentProject || currentProject.id < 0) {
       showNotification('请先保存项目', 'error');
       return;
@@ -595,14 +636,24 @@ export default function DashboardPage() {
     }
     
     try {
+      console.log('查找用户，邮箱:', inviteEmail.trim());
+      
       // 1. 查找用户
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, email')
         .eq('email', inviteEmail.trim())
-        .single();
+        .maybeSingle(); // 使用 maybeSingle 而不是 single，避免没找到时报错
       
-      if (profileError || !profileData) {
+      console.log('查找用户结果:', profileData, '错误:', profileError);
+      
+      if (profileError) {
+        console.error('查找用户出错:', profileError);
+        showNotification(`查找用户失败: ${profileError.message}`, 'error');
+        return;
+      }
+      
+      if (!profileData) {
         showNotification('未找到该用户，请确认邮箱是否正确', 'error');
         return;
       }
@@ -613,18 +664,30 @@ export default function DashboardPage() {
         return;
       }
       
+      console.log('检查是否已是成员，项目ID:', currentProject.id, '用户ID:', profileData.id);
+      
       // 3. 检查是否已经是成员
-      const { data: existingMember } = await supabase
+      const { data: existingMember, error: checkError } = await supabase
         .from('project_members')
         .select('id')
         .eq('project_id', currentProject.id)
         .eq('user_id', profileData.id)
-        .single();
+        .maybeSingle();
+      
+      console.log('检查已有成员结果:', existingMember, '错误:', checkError);
+      
+      if (checkError) {
+        console.error('检查成员出错:', checkError);
+        showNotification(`检查失败: ${checkError.message}`, 'error');
+        return;
+      }
       
       if (existingMember) {
         showNotification('该用户已经是项目成员', 'error');
         return;
       }
+      
+      console.log('添加协作者，项目ID:', currentProject.id, '用户ID:', profileData.id);
       
       // 4. 添加协作者
       const { error: insertError } = await supabase
@@ -635,14 +698,19 @@ export default function DashboardPage() {
           role: 'editor'
         });
       
+      console.log('添加结果，错误:', insertError);
+      
       if (insertError) {
+        console.error('邀请失败:', insertError);
         showNotification(`邀请失败: ${insertError.message}`, 'error');
       } else {
         showNotification(`成功邀请 ${inviteEmail} 加入项目！`, 'success');
         setInviteEmail('');
+        setIsModalOpen(null); // 关闭对话框
         fetchProjectMembers(); // 刷新成员列表
       }
     } catch (err: any) {
+      console.error('邀请出错:', err);
       showNotification(`邀请出错: ${err.message}`, 'error');
     }
   };
@@ -725,7 +793,7 @@ export default function DashboardPage() {
     setIsSaving(false);
     setHasUnsavedChanges(false);
     return savedProject;
-  }, [currentProject, user, hasUnsavedChanges, tables, unassignedGuests, projects, isSaving, supabase]);
+  }, [currentProject, user, hasUnsavedChanges, tables, unassignedGuests, projects, isSaving, supabase, showNotification]);
 
   const markChanges = useCallback(() => {
     setHasUnsavedChanges(true);
@@ -810,7 +878,7 @@ export default function DashboardPage() {
       }
     }
     setIsLoading(false);
-  }, [supabase]);
+  }, [supabase, showNotification]);
 
   const handleNewProject = () => {
     if (!inputValue.trim()) { showNotification('项目名称不能为空', 'error'); return; }
@@ -1733,7 +1801,7 @@ export default function DashboardPage() {
         for (const rule of rules) {
           const [p1, p2] = rule;
           const isConflict = (p1 === activeId && targetTable.guests.some(g => g.id === p2)) ||
-                             (p2 === activeId && targetTable.guests.some(g => g.id === p1));
+                               (p2 === activeId && targetTable.guests.some(g => g.id === p1));
           if (isConflict) {
             showNotification(`规则冲突：${guestNameMap.get(p1)} 和 ${guestNameMap.get(p2)} 不能同桌。`, 'error');
             return;
@@ -1881,7 +1949,7 @@ export default function DashboardPage() {
       channel.untrack();
       supabase.removeChannel(channel);
     };
-  }, [currentProject?.id, user?.id, supabase]);
+  }, [currentProject?.id, user?.id, supabase, showNotification]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -2293,7 +2361,7 @@ export default function DashboardPage() {
                               {member.role === 'owner' ? '所有者' : member.role === 'editor' ? '编辑者' : '查看者'}
                             </p>
                           </div>
-                          {currentProject?.user_id === user?.id && (
+                          {currentProject?.user_id === user?.id && member.user_id !== user?.id && (
                             <button
                               onClick={() => handleRemoveMember(member.id, member.email)}
                               className="text-red-400 hover:text-red-300 transition-colors"
