@@ -218,11 +218,11 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
       role="button"
       tabIndex={0}
       aria-label={`宾客 ${guest.name}`}
-      className="group relative p-3 bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl text-white cursor-grab active:cursor-grabbing shadow-md hover:shadow-xl flex items-center transition-all duration-300 ease-out hover:scale-[1.02] hover:-translate-y-0.5 border border-gray-600 hover:border-gray-500"
+      className="group relative p-2 bg-gradient-to-br from-gray-700 to-gray-800 rounded-md text-white cursor-grab active:cursor-grabbing shadow-md hover:shadow-lg flex items-center transition-all duration-300 ease-out hover:scale-[1.02] hover:-translate-y-0.5 border border-gray-600 hover:border-gray-500"
     >
       {hasRule && (
         <div
-          className="absolute -top-2 -left-2 w-5 h-5 bg-yellow-400 text-black text-xs font-bold flex items-center justify-center rounded-full border-2 border-gray-800 shadow-lg animate-pulse"
+          className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-yellow-400 text-black text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-gray-800 shadow-lg animate-pulse"
           title="此宾客存在特殊规则"
           aria-label="存在特殊规则"
         >
@@ -230,20 +230,20 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
         </div>
       )}
 
-      <div className="relative flex-shrink-0 mr-3">
+      <div className="relative flex-shrink-0 mr-2.5">
         {guest.avatarUrl ? (
           <img
             src={guest.avatarUrl}
             alt={guest.name}
-            className="w-9 h-9 rounded-full object-cover shadow-inner transition-transform duration-200 group-hover:scale-110"
+            className="w-8 h-8 rounded-full object-cover shadow-inner transition-transform duration-200 group-hover:scale-110"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center font-bold text-sm shadow-inner transition-transform duration-200 group-hover:scale-110">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center font-bold text-xs shadow-inner transition-transform duration-200 group-hover:scale-110">
             {guest.name.charAt(0).toUpperCase()}
           </div>
         )}
         <div
-          className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-gray-800 ${statusColors[guest.status || 'unconfirmed']}`}
+          className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-gray-800 ${statusColors[guest.status || 'unconfirmed']}`}
           title={statusTooltips[guest.status || 'unconfirmed']}
         />
       </div>
@@ -252,7 +252,7 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
 
       <button
         onClick={handleStatusClick}
-        className="mr-2 p-1 hover:bg-gray-600 rounded transition-all duration-200"
+        className="mr-1.5 p-1 hover:bg-gray-600 rounded transition-all duration-200"
         title={`状态: ${statusTooltips[guest.status || 'unconfirmed']} (点击切换)`}
         aria-label={`切换状态，当前: ${statusTooltips[guest.status || 'unconfirmed']}`}
       >
@@ -2446,10 +2446,10 @@ export default function DashboardPage() {
 
       <aside className={`
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        fixed lg:relative w-72 h-full bg-gradient-to-b from-gray-800 to-gray-900 p-6 flex flex-col border-r border-gray-700 shadow-2xl z-40 transition-transform duration-300
+        fixed lg:relative w-60 h-full bg-gradient-to-b from-gray-800 to-gray-900 p-5 flex flex-col border-r border-gray-700 shadow-xl z-40 transition-transform duration-300
       `}>
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">SmartSeat</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">SmartSeat</h1>
           <div className="flex items-center gap-2">
             <LogoutButton />
             <button
@@ -2464,15 +2464,15 @@ export default function DashboardPage() {
         <button
           data-testid="btn-new-project"
           onClick={() => { setInputValue(''); setIsModalOpen('newProject'); }}
-          className={`w-full mb-6 px-4 py-3 rounded-xl bg-gradient-to-r ${theme.success} hover:from-green-500 hover:to-green-400 text-white font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+          className={`w-full mb-5 px-4 py-2.5 rounded-lg bg-gradient-to-r ${theme.success} hover:from-green-500 hover:to-green-400 text-white font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           + 新建项目
         </button>
-        <div className="flex-grow overflow-y-auto pr-2 space-y-2">
+        <div className="flex-grow overflow-y-auto pr-2 space-y-1.5">
           {projects.map((proj) => (
             <div
               key={proj.id}
-              className={`group p-4 rounded-xl cursor-pointer transition-all duration-300 ${currentProject?.id === proj.id ? `bg-gradient-to-r ${theme.primary} shadow-lg` : 'bg-gray-700 hover:bg-gray-600 shadow-md hover:shadow-lg'}`}
+              className={`group p-3 rounded-lg cursor-pointer transition-all duration-300 ${currentProject?.id === proj.id ? `bg-gradient-to-r ${theme.primary} shadow-md` : 'bg-gray-700 hover:bg-gray-600 shadow-sm hover:shadow-md'}`}
             >
               {editingProjectId === proj.id ? (
                 <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
@@ -2546,18 +2546,18 @@ export default function DashboardPage() {
             onDragEnd={handleDragEnd}
             collisionDetection={rectIntersection}
           >
-            <div className="mb-6">
-              <input
-                data-testid="project-name"
-                type="text"
-                value={currentProject.name}
-                onChange={(e) => {
-                  setCurrentProject(p => p ? {...p, name: e.target.value} : null);
-                  markChanges();
-                }}
-                className="text-3xl md:text-4xl font-bold bg-transparent focus:outline-none focus:bg-gray-800 focus:bg-opacity-30 rounded-xl px-4 py-2 w-full transition-all duration-200 border-2 border-transparent focus:border-blue-500"
-                aria-label="项目名称"
-              />
+              <div className="mb-5">
+                <input
+                  data-testid="project-name"
+                  type="text"
+                  value={currentProject.name}
+                  onChange={(e) => {
+                    setCurrentProject(p => p ? {...p, name: e.target.value} : null);
+                    markChanges();
+                  }}
+                  className="text-2xl md:text-3xl font-bold bg-transparent focus:outline-none focus:bg-gray-800 focus:bg-opacity-30 rounded-lg px-3 py-2 w-full transition-all duration-200 border-2 border-transparent focus:border-blue-500"
+                  aria-label="项目名称"
+                />
             </div>
 
             {isEmpty ? (
@@ -2566,14 +2566,14 @@ export default function DashboardPage() {
                 onAiSeating={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
               />
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 md:gap-6">
                 <div className="lg:col-span-1">
-                  <div className={`bg-gradient-to-br ${theme.cardBg} rounded-2xl p-6 border border-gray-700 shadow-xl flex flex-col`}>
-                    <h3 className="font-bold text-xl mb-4 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  <div className={`bg-gradient-to-br ${theme.cardBg} rounded-xl p-5 border border-gray-700 shadow-lg flex flex-col`}>
+                    <h3 className="font-bold text-lg mb-3 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                       未分配宾客 ({unassignedGuests.length})
                     </h3>
 
-                    <div className="mb-4 space-y-3">
+                    <div className="mb-3 space-y-2.5">
                       <input
                         type="text"
                         placeholder="🔍 搜索宾客..."
@@ -2642,7 +2642,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="lg:col-span-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {tables.map(table => {
                       const fillRate = table.capacity ? (table.guests.length / table.capacity) * 100 : 0;
                       const isFull = table.guests.length >= table.capacity;
@@ -2651,12 +2651,12 @@ export default function DashboardPage() {
                         <div
                           key={table.id}
                           data-testid="table-card"
-                          className={`bg-gradient-to-br ${theme.cardBg} p-6 rounded-2xl flex flex-col border-2 transition-all duration-300 transform hover:scale-[1.02] shadow-xl hover:shadow-2xl ${
+                          className={`bg-gradient-to-br ${theme.cardBg} p-5 rounded-xl flex flex-col border-2 transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl ${
                             isFull ? 'border-red-500 shadow-red-500/20' : 'border-gray-700 hover:border-gray-600'
                           }`}
                         >
-                          <div className="mb-4">
-                            <div className="group flex justify-between items-center mb-3 pb-3 border-b border-gray-700">
+                          <div className="mb-3">
+                            <div className="group flex justify-between items-center mb-2.5 pb-2.5 border-b border-gray-700">
                               <input
                                 type="text"
                                 value={table.tableName}
@@ -2668,7 +2668,7 @@ export default function DashboardPage() {
                                   broadcastLayoutChange(updatedTables, unassignedGuests);
                                   markChanges();
                                 }}
-                                className="font-bold text-lg bg-transparent w-full focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-2 py-1 transition-all duration-200"
+                                  className="font-bold text-base bg-transparent w-full focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-2 py-1 transition-all duration-200"
                                 aria-label={`桌子名称: ${table.tableName}`}
                               />
                               <button
@@ -2706,7 +2706,7 @@ export default function DashboardPage() {
                                     broadcastLayoutChange(updatedTables, unassignedGuests);
                                     markChanges();
                                   }}
-                                  className="w-12 bg-transparent text-center focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-1 ml-1"
+                                  className="w-11 bg-transparent text-center focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-1 ml-1"
                                   min="1"
                                   aria-label="桌子容量"
                                 /> 人
@@ -2724,12 +2724,12 @@ export default function DashboardPage() {
                           >
                             <DroppableContainer
                               id={table.id}
-                              className="flex-grow rounded-xl min-h-[60px]"
+                              className="flex-grow rounded-lg min-h-[54px]"
                               isDraggingOver={!!activeGuest}
                             >
-                              <div className="space-y-3">
+                              <div className="space-y-2.5">
                                 {table.guests.length === 0 && (
-                                  <div className="text-center text-gray-400 text-sm py-6 border-2 border-dashed border-gray-600 rounded-xl bg-gray-800 bg-opacity-30 transition-all duration-200 hover:border-gray-500">
+                                  <div className="text-center text-gray-400 text-sm py-5 border-2 border-dashed border-gray-600 rounded-lg bg-gray-800 bg-opacity-30 transition-all duration-200 hover:border-gray-500">
                                     将宾客拖到此处
                                   </div>
                                 )}
@@ -2811,13 +2811,13 @@ export default function DashboardPage() {
           data-testid="btn-save-project"
           onClick={handleSaveProject}
           disabled={isSaving || !hasUnsavedChanges}
-          className="w-full p-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 font-semibold transition-all duration-300 transform hover:scale-105 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed disabled:transform-none shadow-lg hover:shadow-xl disabled:shadow-none"
+          className="w-full p-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 font-semibold transition-all duration-300 transform hover:scale-105 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed disabled:transform-none shadow-md hover:shadow-lg disabled:shadow-none"
           aria-label={hasUnsavedChanges ? '保存更改' : '全部已保存'}
         >
           {isSaving ? '保存中...' : (hasUnsavedChanges ? '💾 保存更改*' : '💾 全部已保存')}
         </button>
 
-        <label className="flex items-center gap-3 text-sm text-gray-300 select-none p-3 bg-gray-800 bg-opacity-50 rounded-xl hover:bg-opacity-70 transition-all duration-200 cursor-pointer">
+        <label className="flex items-center gap-3 text-sm text-gray-300 select-none p-2.5 bg-gray-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-all duration-200 cursor-pointer">
           <input
             data-testid="toggle-autosave"
             type="checkbox"
@@ -2840,12 +2840,12 @@ export default function DashboardPage() {
 
         <hr className="border-gray-700 my-2" />
 
-        <h3 className="text-lg font-bold text-gray-200">快捷操作</h3>
+        <h3 className="text-base font-bold text-gray-200">快捷操作</h3>
 
         <button
           data-testid="btn-add-guest"
           onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }}
-          className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+          className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           添加宾客
         </button>
@@ -2853,7 +2853,7 @@ export default function DashboardPage() {
         <button
           data-testid="btn-add-table"
           onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addTable'); }}
-          className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+          className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           添加新桌
         </button>
@@ -2861,7 +2861,7 @@ export default function DashboardPage() {
         <button
           data-testid="btn-ai-seating"
           onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
-          className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+          className={`w-full p-2.5 rounded-lg bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           🤖 AI 智能排座
         </button>
@@ -2869,7 +2869,7 @@ export default function DashboardPage() {
         <button
           data-testid="btn-check-in"
           onClick={() => setIsModalOpen('checkIn')}
-          className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.warning} hover:from-yellow-500 hover:to-yellow-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+          className={`w-full p-2.5 rounded-lg bg-gradient-to-r ${theme.warning} hover:from-yellow-500 hover:to-yellow-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           📱 现场签到模式
         </button>
@@ -2880,7 +2880,7 @@ export default function DashboardPage() {
             setInviteEmail('');
             setIsModalOpen('inviteCollaborator');
           }}
-          className={`w-full p-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+          className={`w-full p-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           👥 邀请协作者
         </button>
@@ -2888,7 +2888,7 @@ export default function DashboardPage() {
         <button
           data-testid="btn-export-pdf"
           onClick={handleExportPdf}
-          className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+          className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           导出为 PDF
         </button>
@@ -2896,12 +2896,12 @@ export default function DashboardPage() {
         <button
           data-testid="btn-export-place-cards"
           onClick={handleExportPlaceCards}
-          className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+          className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           📇 生成桌卡
         </button>
 
-        <div className={`p-5 bg-gradient-to-br ${theme.cardBg} rounded-xl text-sm space-y-3 border border-gray-700 shadow-lg`}>
+        <div className={`p-4 bg-gradient-to-br ${theme.cardBg} rounded-lg text-sm space-y-2.5 border border-gray-700 shadow-md`}>
           <h4 className="font-bold text-md mb-3 text-gray-200">关系规则</h4>
           <div className='max-h-28 overflow-y-auto space-y-2 pr-2'>
             {(currentProject?.layout_data?.rules?.notTogether || []).map((rule, index) => (
@@ -2935,7 +2935,7 @@ export default function DashboardPage() {
 
         <div className="flex-grow"></div>
 
-        <div className={`p-5 bg-gradient-to-br ${theme.cardBg} rounded-xl text-sm space-y-3 border border-gray-700 shadow-lg`}>
+        <div className={`p-4 bg-gradient-to-br ${theme.cardBg} rounded-lg text-sm space-y-2.5 border border-gray-700 shadow-md`}>
           <h4 className="font-bold text-md mb-3 text-gray-200">数据统计</h4>
 
           <StatsChart stats={stats} />
