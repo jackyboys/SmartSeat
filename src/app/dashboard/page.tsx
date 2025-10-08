@@ -53,6 +53,7 @@ type NotTogetherRule = [string, string];
 interface Project {
   id: number;
   name: string;
+  user_id?: string;
   layout_data: {
     tables: SeatingTable[];
     unassignedGuests: Guest[];
@@ -60,6 +61,13 @@ interface Project {
       notTogether: NotTogetherRule[];
     };
   } | null;
+}
+
+interface ProjectMember {
+  id: number;
+  user_id: string;
+  email: string;
+  role: string;
 }
 
 const statusColors: { [key in GuestStatus]: string } = {
@@ -419,7 +427,7 @@ export default function DashboardPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | 'checkIn' | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | 'checkIn' | 'inviteCollaborator' | null>(null);
   const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
   const [inputValue, setInputValue] = useState('');
   const [inputCapacity, setInputCapacity] = useState('10');
@@ -438,9 +446,14 @@ export default function DashboardPage() {
     title: string;
     message: string;
     onConfirm: () => void;
+    onCancel?: () => void;
     type?: 'warning' | 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
   const [activeCollaborators, setActiveCollaborators] = useState<string[]>([]);
+
+  // ✅ 新增：协作者管理相关状态
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
 
   // Add these two new states for search and filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -510,7 +523,13 @@ export default function DashboardPage() {
     });
   }, [currentProject, user, supabase]);
 
-  const showConfirm = (title: string, message: string, onConfirm: () => void, type: 'warning' | 'danger' | 'info' = 'warning') => {
+  const showConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: 'warning' | 'danger' | 'info' = 'warning',
+    onCancel?: () => void
+  ) => {
     setConfirmDialog({
       isOpen: true,
       title,
@@ -519,8 +538,135 @@ export default function DashboardPage() {
         onConfirm();
         setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {} });
       },
+      onCancel,
       type
     });
+  };
+
+  // ✅ 新增：获取项目成员列表
+  const fetchProjectMembers = useCallback(async () => {
+    if (!currentProject || currentProject.id < 0) {
+      setProjectMembers([]);
+      return;
+    }
+    
+    const { data, error } = await supabase
+      .from('project_members')
+      .select(`
+        id,
+        user_id,
+        role,
+        profiles:user_id (
+          email
+        )
+      `)
+      .eq('project_id', currentProject.id);
+    
+    if (error) {
+      console.error('获取成员失败:', error);
+      setProjectMembers([]);
+    } else {
+      const members = (data || []).map((m: any) => ({
+        id: m.id,
+        user_id: m.user_id,
+        email: m.profiles?.email || '未知',
+        role: m.role
+      }));
+      setProjectMembers(members);
+    }
+  }, [currentProject, supabase]);
+
+  // ✅ 新增：邀请协作者
+  const handleInviteCollaborator = async () => {
+    if (!currentProject || currentProject.id < 0) {
+      showNotification('请先保存项目', 'error');
+      return;
+    }
+    
+    if (!inviteEmail.trim()) {
+      showNotification('请输入邮箱地址', 'error');
+      return;
+    }
+    
+    // 检查是否是项目所有者
+    if (currentProject.user_id !== user?.id) {
+      showNotification('只有项目所有者可以邀请协作者', 'error');
+      return;
+    }
+    
+    try {
+      // 1. 查找用户
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, email')
+        .eq('email', inviteEmail.trim())
+        .single();
+      
+      if (profileError || !profileData) {
+        showNotification('未找到该用户，请确认邮箱是否正确', 'error');
+        return;
+      }
+      
+      // 2. 检查是否是项目所有者本人
+      if (profileData.id === user?.id) {
+        showNotification('不能邀请自己', 'error');
+        return;
+      }
+      
+      // 3. 检查是否已经是成员
+      const { data: existingMember } = await supabase
+        .from('project_members')
+        .select('id')
+        .eq('project_id', currentProject.id)
+        .eq('user_id', profileData.id)
+        .single();
+      
+      if (existingMember) {
+        showNotification('该用户已经是项目成员', 'error');
+        return;
+      }
+      
+      // 4. 添加协作者
+      const { error: insertError } = await supabase
+        .from('project_members')
+        .insert({
+          project_id: currentProject.id,
+          user_id: profileData.id,
+          role: 'editor'
+        });
+      
+      if (insertError) {
+        showNotification(`邀请失败: ${insertError.message}`, 'error');
+      } else {
+        showNotification(`成功邀请 ${inviteEmail} 加入项目！`, 'success');
+        setInviteEmail('');
+        fetchProjectMembers(); // 刷新成员列表
+      }
+    } catch (err: any) {
+      showNotification(`邀请出错: ${err.message}`, 'error');
+    }
+  };
+
+  // ✅ 新增：移除协作者
+  const handleRemoveMember = async (memberId: number, memberEmail: string) => {
+    showConfirm(
+      '确认移除',
+      `确定要将 ${memberEmail} 移出项目吗？`,
+      async () => {
+        const { error } = await supabase
+          .from('project_members')
+          .delete()
+          .eq('id', memberId);
+        
+        if (error) {
+          showNotification(`移除失败: ${error.message}`, 'error');
+        } else {
+          showNotification('成员已移除', 'success');
+          fetchProjectMembers();
+        }
+      },
+      'danger'
+    );
   };
 
   const handleSaveProject = useCallback(async () => {
@@ -593,25 +739,6 @@ export default function DashboardPage() {
     }
   }, [handleSaveProject, autoSaveEnabled]);
 
-  const handleLoadProject = useCallback(async (project: Project) => {
-    if (currentProject?.id === project.id) return;
-
-    if (hasUnsavedChanges) {
-      showConfirm(
-        '未保存的更改',
-        '您有未保存的更改。是否要在切换前保存？\n\n点击"确定"保存并切换\n点击"取消"放弃更改并切换',
-        async () => {
-          await handleSaveProject();
-          loadProjectData(project);
-        },
-        'warning'
-      );
-      return;
-    }
-
-    loadProjectData(project);
-  }, [hasUnsavedChanges, handleSaveProject, currentProject]);
-
   const loadProjectData = (project: Project) => {
     setCurrentProject(project);
     const layout = project.layout_data;
@@ -625,8 +752,43 @@ export default function DashboardPage() {
     setHasUnsavedChanges(false);
   };
 
+  const handleLoadProject = useCallback(async (project: Project) => {
+    if (currentProject?.id === project.id) return;
+
+    if (hasUnsavedChanges) {
+      showConfirm(
+        '未保存的更改',
+        '您有未保存的更改。是否要在切换前保存？\n\n点击"确定"保存并切换\n点击"取消"放弃更改并切换',
+        async () => {
+          await handleSaveProject();
+          loadProjectData(project);
+        },
+        'warning',
+        () => {
+          // 点击"取消"：放弃更改并切换
+          setHasUnsavedChanges(false);
+          loadProjectData(project);
+        }
+      );
+      return;
+    }
+
+    loadProjectData(project);
+  }, [hasUnsavedChanges, handleSaveProject, currentProject]);
+
+  // ✅ 修改：查询用户创建的项目 + 被分享的项目
   const fetchProjectsAndLoadFirst = useCallback(async (userToFetch: User) => {
-    const { data, error } = await supabase.from('projects').select('id, name, layout_data').eq('user_id', userToFetch.id).order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('projects')
+      .select(`
+        id, 
+        name, 
+        layout_data,
+        user_id,
+        created_at
+      `)
+      .order('created_at', { ascending: false });
+    
     if (error) {
       showNotification(`加载项目失败: ${error.message}`, 'error');
     } else {
@@ -668,7 +830,7 @@ export default function DashboardPage() {
 
   const createNewProject = () => {
     const tempId = -Date.now();
-    const newProj: Project = { id: tempId, name: inputValue, layout_data: { tables: [], unassignedGuests: [], rules: { notTogether: [] } } };
+    const newProj: Project = { id: tempId, name: inputValue, user_id: user?.id, layout_data: { tables: [], unassignedGuests: [], rules: { notTogether: [] } } };
     setProjects([newProj, ...projects]);
     handleLoadProject(newProj);
     setIsModalOpen(null); setInputValue('');
@@ -1652,6 +1814,15 @@ export default function DashboardPage() {
     return () => subscription.unsubscribe();
   }, [router, fetchProjectsAndLoadFirst, supabase.auth]);
 
+  // ✅ 新增：当项目切换时，获取项目成员
+  useEffect(() => {
+    if (currentProject && currentProject.id > 0) {
+      fetchProjectMembers();
+    } else {
+      setProjectMembers([]);
+    }
+  }, [currentProject?.id, fetchProjectMembers]);
+
   // 实时协作：订阅项目变更
   useEffect(() => {
     if (!currentProject || !user) return;
@@ -1767,7 +1938,12 @@ export default function DashboardPage() {
         title={confirmDialog.title}
         message={confirmDialog.message}
         onConfirm={confirmDialog.onConfirm}
-        onCancel={() => setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {} })}
+        onCancel={() => {
+          if (confirmDialog.onCancel) {
+            confirmDialog.onCancel();
+          }
+          setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+        }}
         type={confirmDialog.type}
       />
 
@@ -2069,6 +2245,78 @@ export default function DashboardPage() {
               </div>
             </>
           )}
+
+          {/* ✅ 新增：邀请协作者 Modal */}
+          {isModalOpen === 'inviteCollaborator' && (
+            <>
+              <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
+                邀请协作者
+              </h3>
+              
+              {currentProject && currentProject.user_id !== user?.id && (
+                <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <p className="text-sm text-yellow-200">
+                    ⚠️ 只有项目所有者可以邀请协作者
+                  </p>
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-gray-400 font-medium mb-2 block">
+                    协作者邮箱
+                  </label>
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    placeholder="example@email.com"
+                    className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
+                    disabled={currentProject?.user_id !== user?.id}
+                  />
+                </div>
+                
+                {projectMembers.length > 0 && (
+                  <div>
+                    <label className="text-sm text-gray-400 font-medium mb-2 block">
+                      当前协作者
+                    </label>
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {projectMembers.map(member => (
+                        <div 
+                          key={member.id}
+                          className="flex justify-between items-center bg-gray-700 p-3 rounded-lg"
+                        >
+                          <div>
+                            <p className="text-sm text-white">{member.email}</p>
+                            <p className="text-xs text-gray-400">
+                              {member.role === 'owner' ? '所有者' : member.role === 'editor' ? '编辑者' : '查看者'}
+                            </p>
+                          </div>
+                          {currentProject?.user_id === user?.id && (
+                            <button
+                              onClick={() => handleRemoveMember(member.id, member.email)}
+                              className="text-red-400 hover:text-red-300 transition-colors"
+                            >
+                              移除
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <button
+                  onClick={handleInviteCollaborator}
+                  disabled={currentProject?.user_id !== user?.id}
+                  className={`w-full p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:transform-none`}
+                >
+                  发送邀请
+                </button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 
@@ -2178,7 +2426,13 @@ export default function DashboardPage() {
                   onClick={() => handleLoadProject(proj)}
                   className="flex justify-between items-center"
                 >
-                  <p className="font-semibold truncate flex-1">{proj.name}</p>
+                  <div className="flex-1">
+                    <p className="font-semibold truncate">{proj.name}</p>
+                    {/* ✅ 显示项目类型标签 */}
+                    {proj.user_id && proj.user_id !== user?.id && (
+                      <p className="text-xs text-blue-300 mt-1">🤝 共享项目</p>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={e => {
@@ -2550,6 +2804,17 @@ export default function DashboardPage() {
           className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.warning} hover:from-yellow-500 hover:to-yellow-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
         >
           📱 现场签到模式
+        </button>
+
+        {/* ✅ 新增：邀请协作者按钮 */}
+        <button
+          onClick={() => {
+            setInviteEmail('');
+            setIsModalOpen('inviteCollaborator');
+          }}
+          className={`w-full p-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+        >
+          👥 邀请协作者
         </button>
 
         <button
