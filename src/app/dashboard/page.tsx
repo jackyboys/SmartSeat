@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import pdfMake from 'pdfmake/build/pdfmake';
+// 确保您已经创建了这个字体配置文件
 import { pdfFonts } from '@/utils/pdfFonts';
 
 // 配置pdfMake字体
@@ -56,7 +57,7 @@ interface Project {
     tables: SeatingTable[];
     unassignedGuests: Guest[];
     rules?: {
-      notTogether: NotTogetherRule[]; 
+      notTogether: NotTogetherRule[];
     };
   } | null;
 }
@@ -74,11 +75,11 @@ const statusTooltips: { [key in GuestStatus]: string } = {
 };
 
 // --- 自定义确认对话框 ---
-const ConfirmDialog = ({ 
-  isOpen, 
-  title, 
-  message, 
-  onConfirm, 
+const ConfirmDialog = ({
+  isOpen,
+  title,
+  message,
+  onConfirm,
   onCancel,
   confirmText = '确定',
   cancelText = '取消',
@@ -102,11 +103,11 @@ const ConfirmDialog = ({
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn p-4"
       onClick={onCancel}
     >
-      <div 
+      <div
         className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl p-8 max-w-md w-full border border-gray-700 shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
@@ -132,12 +133,12 @@ const ConfirmDialog = ({
 };
 
 // --- 优化后的通知组件 ---
-const Notification = ({ notification, onClose }: { 
+const Notification = ({ notification, onClose }: {
   notification: { type: 'success' | 'error', message: string } | null;
   onClose: () => void;
 }) => {
   if (!notification) return null;
-  
+
   return (
     <div className="fixed top-6 right-6 max-w-md z-50 animate-slideIn">
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-2xl">
@@ -153,7 +154,7 @@ const Notification = ({ notification, onClose }: {
             </p>
             <p className="text-sm text-gray-300">{notification.message}</p>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
             aria-label="关闭通知"
@@ -186,7 +187,7 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
     e.stopPropagation();
     onDelete(guest.id, tableId);
   };
-  
+
   const handleStatusClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -197,12 +198,12 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
   };
 
   return (
-    <div 
-      ref={setNodeRef} 
-      style={style} 
-      {...attributes} 
-      {...listeners} 
-      data-testid="guest-item" 
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      data-testid="guest-item"
       data-guest-name={guest.name}
       role="button"
       tabIndex={0}
@@ -210,28 +211,28 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
       className="group relative p-3 bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl text-white cursor-grab active:cursor-grabbing shadow-md hover:shadow-xl flex items-center transition-all duration-300 ease-out hover:scale-[1.02] hover:-translate-y-0.5 border border-gray-600 hover:border-gray-500"
     >
       {hasRule && (
-        <div 
-          className="absolute -top-2 -left-2 w-5 h-5 bg-yellow-400 text-black text-xs font-bold flex items-center justify-center rounded-full border-2 border-gray-800 shadow-lg animate-pulse" 
+        <div
+          className="absolute -top-2 -left-2 w-5 h-5 bg-yellow-400 text-black text-xs font-bold flex items-center justify-center rounded-full border-2 border-gray-800 shadow-lg animate-pulse"
           title="此宾客存在特殊规则"
           aria-label="存在特殊规则"
         >
           !
         </div>
       )}
-      
+
       <div className="relative flex-shrink-0 mr-3">
         {guest.avatarUrl ? (
-          <img 
-            src={guest.avatarUrl} 
+          <img
+            src={guest.avatarUrl}
             alt={guest.name}
-            className="w-9 h-9 rounded-full object-cover shadow-inner transition-transform duration-200 group-hover:scale-110" 
+            className="w-9 h-9 rounded-full object-cover shadow-inner transition-transform duration-200 group-hover:scale-110"
           />
         ) : (
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-500 to-gray-600 flex items-center justify-center font-bold text-sm shadow-inner transition-transform duration-200 group-hover:scale-110">
             {guest.name.charAt(0).toUpperCase()}
           </div>
         )}
-        <div 
+        <div
           className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-gray-800 ${statusColors[guest.status || 'unconfirmed']}`}
           title={statusTooltips[guest.status || 'unconfirmed']}
         />
@@ -247,9 +248,9 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
       >
         <div className={`w-4 h-4 rounded-full ${statusColors[guest.status || 'unconfirmed']}`} />
       </button>
-      
-      <button 
-        onClick={handleDelete} 
+
+      <button
+        onClick={handleDelete}
         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all duration-200 hover:scale-110 transform"
         aria-label={`删除宾客 ${guest.name}`}
       >
@@ -260,8 +261,8 @@ const DraggableGuest = ({ guest, onDelete, onStatusChange, tableId, hasRule }: {
 };
 
 // ✅ 修改Modal组件，支持不同尺寸
-const Modal = ({ children, onClose, size = 'md' }: { 
-  children: React.ReactNode, 
+const Modal = ({ children, onClose, size = 'md' }: {
+  children: React.ReactNode,
   onClose: () => void,
   size?: 'md' | 'lg' | 'xl'
 }) => {
@@ -272,13 +273,13 @@ const Modal = ({ children, onClose, size = 'md' }: {
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 animate-fadeIn p-4" 
+    <div
+      className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 animate-fadeIn p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
-      <div 
+      <div
         className={`bg-gradient-to-br from-gray-800 to-gray-900 p-6 md:p-8 rounded-2xl shadow-2xl w-full ${sizeClasses[size]} border border-gray-700 transform transition-all duration-300 max-h-[90vh] overflow-y-auto`}
         onClick={e => e.stopPropagation()}
       >
@@ -288,17 +289,17 @@ const Modal = ({ children, onClose, size = 'md' }: {
   );
 };
 
-const DroppableContainer = ({ id, className, children, isDraggingOver }: { 
-  id: string; 
-  className?: string; 
+const DroppableContainer = ({ id, className, children, isDraggingOver }: {
+  id: string;
+  className?: string;
   children: React.ReactNode;
   isDraggingOver?: boolean;
 }) => {
   const { setNodeRef, isOver } = useDroppable({ id });
-  
+
   return (
-    <div 
-      ref={setNodeRef} 
+    <div
+      ref={setNodeRef}
       className={`${className ?? ''} transition-all duration-300 ease-out ${
         isOver ? 'ring-2 ring-blue-400 bg-blue-500/10 scale-[1.01]' : ''
       }`}
@@ -323,13 +324,13 @@ const EmptyState = ({ onAddGuest, onAiSeating }: {
       添加宾客和桌子，或使用 AI 智能排座快速生成座位方案
     </p>
     <div className="flex gap-3 flex-wrap justify-center">
-      <button 
+      <button
         onClick={onAddGuest}
         className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg"
       >
         添加宾客
       </button>
-      <button 
+      <button
         onClick={onAiSeating}
         className="px-6 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg"
       >
@@ -355,21 +356,21 @@ const StatsChart = ({ stats }: { stats: any }) => {
         </div>
         <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden flex">
           {confirmedPercent > 0 && (
-            <div 
+            <div
               className="bg-green-500 h-full transition-all duration-500"
               style={{ width: `${confirmedPercent}%` }}
               title={`已确认: ${stats.confirmedCount}`}
             />
           )}
           {unconfirmedPercent > 0 && (
-            <div 
+            <div
               className="bg-yellow-500 h-full transition-all duration-500"
               style={{ width: `${unconfirmedPercent}%` }}
               title={`未确认: ${stats.unconfirmedCount}`}
             />
           )}
           {cancelledPercent > 0 && (
-            <div 
+            <div
               className="bg-red-500 h-full transition-all duration-500"
               style={{ width: `${cancelledPercent}%` }}
               title={`已取消: ${stats.cancelledCount}`}
@@ -377,13 +378,13 @@ const StatsChart = ({ stats }: { stats: any }) => {
           )}
         </div>
       </div>
-      
+
       {stats.tableFillRate.length > 0 && (
         <div className="space-y-2">
           <div className="text-xs text-gray-400">桌子填充率</div>
           <div className="grid grid-cols-5 gap-1">
             {stats.tableFillRate.slice(0, 10).map((table: any, idx: number) => (
-              <div 
+              <div
                 key={table.name || `table-${idx}`}
                 className={`h-8 rounded transition-all duration-300 hover:scale-110 cursor-pointer ${
                   table.rate >= 100 ? 'bg-red-500' :
@@ -438,6 +439,18 @@ export default function DashboardPage() {
     type?: 'warning' | 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
+  // Add these two new states for search and filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeStatusFilter, setActiveStatusFilter] = useState<GuestStatus | 'all'>('all');
+
+  const filteredUnassignedGuests = useMemo(() => {
+    return unassignedGuests.filter(guest => {
+      const matchesSearch = guest.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesFilter = activeStatusFilter === 'all' || guest.status === activeStatusFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [unassignedGuests, searchQuery, activeStatusFilter]);
+
   const autoSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const supabase = createClient();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -450,7 +463,7 @@ export default function DashboardPage() {
     const totalGuests = allGuests.length;
     const tableCount = tables.length;
     const avgGuestsPerTable = tableCount > 0 ? (assignedGuestsCount / tableCount).toFixed(1) : 0;
-    
+
     const confirmedCount = allGuests.filter(g => g.status === 'confirmed').length;
     const unconfirmedCount = allGuests.filter(g => g.status === 'unconfirmed' || g.status === undefined).length;
     const cancelledCount = allGuests.filter(g => g.status === 'cancelled').length;
@@ -470,7 +483,7 @@ export default function DashboardPage() {
       tableFillRate,
     };
   }, [tables, allGuests]);
-  
+
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
@@ -497,23 +510,23 @@ export default function DashboardPage() {
     }
 
     setIsSaving(true);
-    const layout_data = { 
-      tables, 
+    const layout_data = {
+      tables,
       unassignedGuests,
       rules: currentProject.layout_data?.rules || { notTogether: [] }
     };
 
     let savedProject: Project | null = null;
-    
+
     try {
       if (currentProject.id < 0) {
         const { data, error } = await supabase.from('projects').insert({ name: currentProject.name, layout_data, user_id: user.id }).select().single();
-        if (error) { 
+        if (error) {
           console.error('Insert project error:', error);
-          showNotification(`创建失败: ${error.message}`, 'error'); 
+          showNotification(`创建失败: ${error.message}`, 'error');
           setIsSaving(false);
           return null;
-        } 
+        }
         else if(data) {
           showNotification('项目已创建并保存！', 'success');
           savedProject = data;
@@ -523,9 +536,9 @@ export default function DashboardPage() {
         }
       } else {
         const { error } = await supabase.from('projects').update({ name: currentProject.name, layout_data }).eq('id', currentProject.id);
-        if (error) { 
+        if (error) {
           console.error('Update project error:', error);
-          showNotification(`保存失败: ${error.message}`, 'error'); 
+          showNotification(`保存失败: ${error.message}`, 'error');
           setIsSaving(false);
           return null;
         }
@@ -541,7 +554,7 @@ export default function DashboardPage() {
       setIsSaving(false);
       return null;
     }
-    
+
     setIsSaving(false);
     setHasUnsavedChanges(false);
     return savedProject;
@@ -558,10 +571,10 @@ export default function DashboardPage() {
       }, 1000);
     }
   }, [handleSaveProject, autoSaveEnabled]);
-  
+
   const handleLoadProject = useCallback(async (project: Project) => {
     if (currentProject?.id === project.id) return;
-    
+
     if (hasUnsavedChanges) {
       showConfirm(
         '未保存的更改',
@@ -574,7 +587,7 @@ export default function DashboardPage() {
       );
       return;
     }
-    
+
     loadProjectData(project);
   }, [hasUnsavedChanges, handleSaveProject, currentProject]);
 
@@ -735,7 +748,7 @@ export default function DashboardPage() {
     reader.onerror = () => showNotification('读取文件时发生错误', 'error');
     reader.readAsBinaryString(file);
   };
-  
+
   const handleAddGuests = () => {
     const names = inputValue.split('\n').map(n => n.trim()).filter(Boolean);
     if (names.length === 0) { showNotification('请输入宾客姓名', 'error'); return; }
@@ -782,8 +795,8 @@ export default function DashboardPage() {
     if (!guest) return;
 
     if (action === 'move') {
-      setTables(prev => prev.map(t => 
-        t.id === tableId 
+      setTables(prev => prev.map(t =>
+        t.id === tableId
           ? {...t, guests: t.guests.filter(g => g.id !== guestId)}
           : t
       ));
@@ -796,7 +809,7 @@ export default function DashboardPage() {
     setDeleteConfirm(null);
     markChanges();
   };
-    
+
   const handleGuestStatusChange = (guestId: string, newStatus: GuestStatus) => {
     const updateUser = (users: Guest[]) => users.map(g => g.id === guestId ? { ...g, status: newStatus } : g);
     setUnassignedGuests(updateUser);
@@ -831,16 +844,16 @@ export default function DashboardPage() {
       showNotification('不能将同一位宾客设置为一组规则', 'error');
       return;
     }
-    
+
     const newRule: NotTogetherRule = [g1, g2].sort() as NotTogetherRule;
     const existingRules = currentProject?.layout_data?.rules?.notTogether || [];
-    
+
     const isDuplicate = existingRules.some(rule => rule[0] === newRule[0] && rule[1] === newRule[1]);
     if (isDuplicate) {
       showNotification('该规则已存在', 'error');
       return;
     }
-    
+
     setCurrentProject(proj => {
       if (!proj) return null;
       const newLayout = {
@@ -852,7 +865,7 @@ export default function DashboardPage() {
       };
       return { ...proj, layout_data: newLayout };
     });
-    
+
     showNotification('规则添加成功！');
     setIsModalOpen(null);
     setRuleGuests({ g1: '', g2: '' });
@@ -879,31 +892,31 @@ export default function DashboardPage() {
 
   // ✅ 修复AI排座函数 - 确保每个方案都有唯一ID
   const handleAiSeating = async () => {
-    if (!aiGuestList.trim()) { 
-      showNotification('宾客名单不能为空', 'error'); 
-      return; 
+    if (!aiGuestList.trim()) {
+      showNotification('宾客名单不能为空', 'error');
+      return;
     }
-    
+
     setIsAiLoading(true);
     try {
       const response = await fetch('/api/generate-seating', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           guestList: aiGuestList,
           planCount: 3
         }),
       });
       const result = await response.json();
       if(!response.ok) throw new Error(result.error || 'AI 服务出错');
-      
+
       if (result.plans) {
         // ✅ 确保每个方案都有唯一ID
         const plansWithIds = result.plans.map((plan: any, index: number) => ({
           ...plan,
           id: plan.id || uuidv4() // 如果没有id就生成一个
         }));
-        
+
         setAiPlans(plansWithIds);
         setSelectedPlanId(plansWithIds[0]?.id || null);
         showNotification(`AI 生成了 ${plansWithIds.length} 个方案，请选择应用！`);
@@ -912,10 +925,10 @@ export default function DashboardPage() {
         const aiTables: SeatingTable[] = result.tables.map((t: any) => ({
           id: uuidv4(),
           tableName: t.tableName,
-          guests: t.guests.map((gName: string) => ({ 
-            id: uuidv4(), 
-            name: gName, 
-            status: 'unconfirmed' 
+          guests: t.guests.map((gName: string) => ({
+            id: uuidv4(),
+            name: gName,
+            status: 'unconfirmed'
           })),
           capacity: 10,
         }));
@@ -938,18 +951,18 @@ export default function DashboardPage() {
       showNotification('请先选择一个方案', 'error');
       return;
     }
-    
+
     const aiTables: SeatingTable[] = selectedPlan.tables.map((t: any) => ({
       id: uuidv4(),
       tableName: t.tableName,
-      guests: t.guests.map((gName: string) => ({ 
-        id: uuidv4(), 
-        name: gName, 
-        status: 'unconfirmed' 
+      guests: t.guests.map((gName: string) => ({
+        id: uuidv4(),
+        name: gName,
+        status: 'unconfirmed'
       })),
       capacity: 10,
     }));
-    
+
     setTables(aiTables);
     setUnassignedGuests([]);
     showNotification(`已应用"${selectedPlan.name}"方案！`);
@@ -958,7 +971,7 @@ export default function DashboardPage() {
     setAiPlans([]);
     setSelectedPlanId(null);
   };
-  
+
   // ✅ 新的PDF导出函数 - 使用pdfmake
   const handleExportPdf = () => {
     if (!currentProject) {
@@ -978,7 +991,7 @@ export default function DashboardPage() {
         // 页面设置
         pageSize: 'A4',
         pageMargins: [40, 60, 40, 60],
-        
+
         // 内容
         content: [
           // 标题
@@ -988,17 +1001,17 @@ export default function DashboardPage() {
             alignment: 'center',
             margin: [0, 0, 0, 10]
           },
-          
+
           // 时间戳
           {
-            text: `生成时间: ${new Date().toLocaleString('zh-CN', { 
-              year: 'numeric', 
-              month: '2-digit', 
+            text: `生成时间: ${new Date().toLocaleString('zh-CN', {
+              year: 'numeric',
+              month: '2-digit',
               day: '2-digit',
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
-              hour12: false 
+              hour12: false
             })}`,
             style: 'timestamp',
             alignment: 'center',
@@ -1016,8 +1029,8 @@ export default function DashboardPage() {
           ...tables.map((table, tableIndex) => {
             const fillRate = table.capacity ? (table.guests.length / table.capacity * 100).toFixed(0) : 0;
             const statusColor = table.guests.length >= table.capacity ? '#ef4444' :
-                              table.guests.length >= table.capacity * 0.8 ? '#f59e0b' :
-                              '#10b981';
+                                table.guests.length >= table.capacity * 0.8 ? '#f59e0b' :
+                                '#10b981';
 
             return {
               stack: [
@@ -1051,12 +1064,12 @@ export default function DashboardPage() {
                   {
                     ul: table.guests.map((guest, index) => {
                       const statusText = guest.status === 'confirmed' ? '✓' :
-                                       guest.status === 'cancelled' ? '✕' :
-                                       '○';
+                                         guest.status === 'cancelled' ? '✕' :
+                                         '○';
                       const statusColor = guest.status === 'confirmed' ? '#10b981' :
-                                        guest.status === 'cancelled' ? '#ef4444' :
-                                        '#f59e0b';
-                      
+                                          guest.status === 'cancelled' ? '#ef4444' :
+                                          '#f59e0b';
+
                       return {
                         text: [
                           { text: `${index + 1}. `, style: 'guestNumber' },
@@ -1102,12 +1115,12 @@ export default function DashboardPage() {
             {
               ul: unassignedGuests.map((guest, index) => {
                 const statusText = guest.status === 'confirmed' ? '✓' :
-                                 guest.status === 'cancelled' ? '✕' :
-                                 '○';
+                                   guest.status === 'cancelled' ? '✕' :
+                                   '○';
                 const statusColor = guest.status === 'confirmed' ? '#10b981' :
-                                  guest.status === 'cancelled' ? '#ef4444' :
-                                  '#f59e0b';
-                
+                                    guest.status === 'cancelled' ? '#ef4444' :
+                                    '#f59e0b';
+
                 return {
                   text: [
                     { text: `${index + 1}. `, style: 'guestNumber' },
@@ -1361,7 +1374,7 @@ export default function DashboardPage() {
 
       // 生成并下载PDF
       pdfMake.createPdf(docDefinition).download(`${currentProject.name}_座位安排.pdf`);
-      
+
       showNotification('PDF导出成功！');
 
     } catch (error) {
@@ -1370,12 +1383,110 @@ export default function DashboardPage() {
     }
   };
 
+  const handleExportPlaceCards = () => {
+    if (!currentProject) {
+      showNotification('请先选择一个项目', 'error');
+      return;
+    }
+
+    const assignedGuests = tables.flatMap(table =>
+      table.guests.map(guest => ({
+        guestName: guest.name,
+        tableName: table.tableName,
+      }))
+    );
+
+    if (assignedGuests.length === 0) {
+      showNotification('没有已安排座位的宾客可以生成桌卡', 'error');
+      return;
+    }
+
+    showNotification('正在生成桌卡PDF, 请稍候...');
+
+    try {
+      // Define the content for pdfmake
+      const docDefinition: any = {
+        pageSize: 'A4',
+        pageMargins: [20, 20, 20, 20],
+        content: [
+          {
+            layout: {
+              hLineWidth: () => 0,
+              vLineWidth: () => 0,
+              paddingLeft: () => 15,
+              paddingRight: () => 15,
+              paddingTop: () => 15,
+              paddingBottom: () => 15,
+            },
+            table: {
+              widths: ['*', '*', '*'],
+              body: [],
+            },
+          },
+        ],
+        styles: {
+          guestName: {
+            font: 'NotoSansSC',
+            fontSize: 24,
+            bold: true,
+            alignment: 'center',
+            margin: [0, 10, 0, 10],
+            color: '#1a202c',
+          },
+          tableName: {
+            font: 'NotoSansSC',
+            fontSize: 10,
+            alignment: 'center',
+            color: '#718096',
+          },
+          card: {
+            margin: [0, 0, 0, 15],
+          },
+        },
+        defaultStyle: {
+          font: 'Roboto',
+        },
+      };
+
+      // Create a 3-column layout
+      const placeCards = assignedGuests.map(guest => {
+        return {
+          stack: [
+            { text: guest.guestName, style: 'guestName' },
+            { text: `桌号: ${guest.tableName}`, style: 'tableName' },
+          ],
+          style: 'card',
+        };
+      });
+
+      // Distribute cards into a 3-column table
+      const body = [];
+      for (let i = 0; i < placeCards.length; i += 3) {
+        const row = [];
+        row.push(placeCards[i] || {});
+        row.push(placeCards[i + 1] || {});
+        row.push(placeCards[i + 2] || {});
+        body.push(row);
+      }
+      docDefinition.content[0].table.body = body;
+
+      // Generate and download the PDF
+      pdfMake.createPdf(docDefinition).download(`${currentProject.name}_桌卡.pdf`);
+
+      showNotification('桌卡PDF已成功生成！');
+
+    } catch (error) {
+      console.error('生成桌卡PDF时出错:', error);
+      showNotification('生成桌卡失败，请重试', 'error');
+    }
+  };
+
   const findContainer = (id: string) => {
     if (unassignedGuests.some(g => g.id === id) || id === 'unassigned-area') return 'unassigned-area';
     for (const table of tables) { if (table.guests.some(g => g.id === id) || table.id === id) return table.id; }
     return null;
   };
-  
+
   const handleDragStart = (event: DragStartEvent) => {
     const guestId = event.active.id as string;
     setActiveGuest(allGuests.find(g => g.id === guestId) || null);
@@ -1387,7 +1498,7 @@ export default function DashboardPage() {
     if (!over) return;
     const activeId = active.id as string;
     const overId = over.id as string;
-    
+
     const originalContainerId = findContainer(activeId);
     const overContainerId = findContainer(overId);
 
@@ -1471,7 +1582,7 @@ export default function DashboardPage() {
     }
     markChanges();
   };
-  
+
   useEffect(() => {
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -1531,7 +1642,7 @@ export default function DashboardPage() {
       </div>
     );
   }
-  
+
   return (
     <div className="flex flex-col lg:flex-row h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white font-sans overflow-hidden">
       <style jsx global>{`
@@ -1552,7 +1663,7 @@ export default function DashboardPage() {
       `}</style>
 
       <Notification notification={notification} onClose={() => setNotification(null)} />
-      
+
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}
@@ -1564,7 +1675,7 @@ export default function DashboardPage() {
 
       {/* ✅ Modal根据内容类型使用不同尺寸 */}
       {isModalOpen && (
-        <Modal 
+        <Modal
           onClose={() => {
             setIsModalOpen(null);
             // 关闭时重置AI方案状态
@@ -1578,35 +1689,35 @@ export default function DashboardPage() {
           {isModalOpen === 'newProject' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">创建新项目</h3>
-              <input 
-                type="text" 
-                value={inputValue} 
-                onChange={e => setInputValue(e.target.value)} 
-                placeholder="请输入项目名称" 
+              <input
+                type="text"
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                placeholder="请输入项目名称"
                 className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
                 aria-label="项目名称"
               />
-              <button 
-                onClick={handleNewProject} 
+              <button
+                onClick={handleNewProject}
                 className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
               >
                 创建
               </button>
             </>
           )}
-          
+
           {isModalOpen === 'addGuest' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">添加宾客</h3>
               <div className="flex justify-center mb-6 border-b border-gray-700">
-                <button 
-                  onClick={() => setModalInputView('manual')} 
+                <button
+                  onClick={() => setModalInputView('manual')}
                   className={`px-6 py-3 font-semibold transition-all duration-200 ${modalInputView === 'manual' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}
                 >
                   手动输入
                 </button>
-                <button 
-                  onClick={() => setModalInputView('import')} 
+                <button
+                  onClick={() => setModalInputView('import')}
                   className={`px-6 py-3 font-semibold transition-all duration-200 ${modalInputView === 'import' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}
                 >
                   从文件导入
@@ -1614,15 +1725,15 @@ export default function DashboardPage() {
               </div>
               {modalInputView === 'manual' ? (
                 <>
-                  <textarea 
-                    value={inputValue} 
-                    onChange={e => setInputValue(e.target.value)} 
-                    placeholder="每行输入一位宾客姓名&#10;例如：&#10;张三&#10;李四&#10;王五" 
+                  <textarea
+                    value={inputValue}
+                    onChange={e => setInputValue(e.target.value)}
+                    placeholder="每行输入一位宾客姓名&#10;例如：&#10;张三&#10;李四&#10;王五"
                     className="w-full p-3 bg-gray-700 rounded-lg h-40 border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200 resize-none"
                     aria-label="宾客姓名列表"
                   />
-                  <button 
-                    onClick={handleAddGuests} 
+                  <button
+                    onClick={handleAddGuests}
                     className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
                   >
                     添加
@@ -1631,29 +1742,29 @@ export default function DashboardPage() {
               ) : (
                 <>
                   <p className="text-sm text-gray-400 mb-4">支持 .txt, .csv, .xlsx 文件, 每行一个名称。</p>
-                  <input 
-                    type="file" 
-                    accept=".txt,.csv,.xlsx,.xls" 
-                    onChange={(e) => { if (e.target.files?.[0]) { parseFileAndAdd(e.target.files[0], 'guest'); } }} 
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.xlsx,.xls"
+                    onChange={(e) => { if (e.target.files?.[0]) { parseFileAndAdd(e.target.files[0], 'guest'); } }}
                     className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 hover:border-gray-500 transition-all duration-200 cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer file:hover:bg-blue-500"
                   />
                 </>
               )}
             </>
           )}
-          
+
           {isModalOpen === 'addTable' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">添加新桌</h3>
               <div className="flex justify-center mb-6 border-b border-gray-700">
-                <button 
-                  onClick={() => setModalInputView('manual')} 
+                <button
+                  onClick={() => setModalInputView('manual')}
                   className={`px-6 py-3 font-semibold transition-all duration-200 ${modalInputView === 'manual' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}
                 >
                   手动输入
                 </button>
-                <button 
-                  onClick={() => setModalInputView('import')} 
+                <button
+                  onClick={() => setModalInputView('import')}
                   className={`px-6 py-3 font-semibold transition-all duration-200 ${modalInputView === 'import' ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}
                 >
                   从文件导入
@@ -1664,30 +1775,30 @@ export default function DashboardPage() {
                   <div className="space-y-4">
                     <div>
                       <label className="text-sm text-gray-400 font-medium mb-2 block">桌子名称</label>
-                      <input 
-                        type="text" 
-                        value={inputValue} 
-                        onChange={e => setInputValue(e.target.value)} 
-                        placeholder="例如：主桌, 1号桌" 
+                      <input
+                        type="text"
+                        value={inputValue}
+                        onChange={e => setInputValue(e.target.value)}
+                        placeholder="例如：主桌, 1号桌"
                         className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
                         aria-label="桌子名称"
                       />
                     </div>
                     <div>
                       <label className="text-sm text-gray-400 font-medium mb-2 block">容量 (人)</label>
-                      <input 
-                        type="number" 
-                        value={inputCapacity} 
-                        onChange={e => setInputCapacity(e.target.value)} 
-                        placeholder="10" 
+                      <input
+                        type="number"
+                        value={inputCapacity}
+                        onChange={e => setInputCapacity(e.target.value)}
+                        placeholder="10"
                         min="1"
                         className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
                         aria-label="桌子容量"
                       />
                     </div>
                   </div>
-                  <button 
-                    onClick={handleAddTable} 
+                  <button
+                    onClick={handleAddTable}
                     className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
                   >
                     添加
@@ -1696,10 +1807,10 @@ export default function DashboardPage() {
               ) : (
                 <>
                   <p className="text-sm text-gray-400 mb-4">支持 .txt, .csv, .xlsx 文件, 每行一个名称。</p>
-                  <input 
-                    type="file" 
-                    accept=".txt,.csv,.xlsx,.xls" 
-                    onChange={(e) => { if (e.target.files?.[0]) { parseFileAndAdd(e.target.files[0], 'table'); } }} 
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.xlsx,.xls"
+                    onChange={(e) => { if (e.target.files?.[0]) { parseFileAndAdd(e.target.files[0], 'table'); } }}
                     className="w-full p-3 bg-gray-700 rounded-lg border border-gray-600 hover:border-gray-500 transition-all duration-200 cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer file:hover:bg-blue-500"
                   />
                 </>
@@ -1711,19 +1822,19 @@ export default function DashboardPage() {
           {isModalOpen === 'aiSeating' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">AI 智能排座</h3>
-              
+
               {aiPlans.length === 0 ? (
                 <>
-                  <textarea 
-                    value={aiGuestList} 
-                    onChange={e => setAiGuestList(e.target.value)} 
-                    placeholder="在此粘贴您的完整宾客名单..." 
+                  <textarea
+                    value={aiGuestList}
+                    onChange={e => setAiGuestList(e.target.value)}
+                    placeholder="在此粘贴您的完整宾客名单..."
                     className="w-full p-3 bg-gray-700 rounded-lg h-60 border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200 resize-none"
                     aria-label="宾客名单"
                   />
-                  <button 
-                    onClick={handleAiSeating} 
-                    disabled={isAiLoading} 
+                  <button
+                    onClick={handleAiSeating}
+                    disabled={isAiLoading}
                     className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.primary} rounded-lg font-semibold hover:from-blue-500 hover:to-blue-400 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:transform-none disabled:shadow-none`}
                   >
                     {isAiLoading ? "生成中..." : "开始生成"}
@@ -1788,9 +1899,9 @@ export default function DashboardPage() {
               <div className='space-y-5'>
                 <div>
                   <label className='text-sm text-gray-400 font-medium mb-2 block'>选择宾客 1</label>
-                  <select 
-                    value={ruleGuests.g1} 
-                    onChange={e => setRuleGuests(g => ({...g, g1: e.target.value}))} 
+                  <select
+                    value={ruleGuests.g1}
+                    onChange={e => setRuleGuests(g => ({...g, g1: e.target.value}))}
                     className="w-full p-3 bg-gray-700 rounded-lg text-white border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
                     aria-label="选择第一位宾客"
                   >
@@ -1800,9 +1911,9 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <label className='text-sm text-gray-400 font-medium mb-2 block'>选择宾客 2</label>
-                  <select 
-                    value={ruleGuests.g2} 
-                    onChange={e => setRuleGuests(g => ({...g, g2: e.target.value}))} 
+                  <select
+                    value={ruleGuests.g2}
+                    onChange={e => setRuleGuests(g => ({...g, g2: e.target.value}))}
                     className="w-full p-3 bg-gray-700 rounded-lg text-white border border-gray-600 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-200"
                     aria-label="选择第二位宾客"
                   >
@@ -1811,8 +1922,8 @@ export default function DashboardPage() {
                   </select>
                 </div>
               </div>
-              <button 
-                onClick={handleAddRule} 
+              <button
+                onClick={handleAddRule}
                 className={`mt-6 w-full p-3 bg-gradient-to-r ${theme.success} rounded-lg font-semibold hover:from-green-500 hover:to-green-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
               >
                 添加规则
@@ -1830,19 +1941,19 @@ export default function DashboardPage() {
               请选择对宾客 "<span className="font-semibold text-blue-400">{deleteConfirm.guestName}</span>" 的操作：
             </p>
             <div className="flex flex-col space-y-3">
-              <button 
+              <button
                 onClick={() => handleConfirmDelete('move')}
                 className={`w-full px-4 py-3 bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
               >
                 移动到未分配区
               </button>
-              <button 
+              <button
                 onClick={() => handleConfirmDelete('delete')}
                 className={`w-full px-4 py-3 bg-gradient-to-r ${theme.danger} hover:from-red-500 hover:to-red-400 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
               >
                 彻底删除宾客
               </button>
-              <button 
+              <button
                 onClick={() => setDeleteConfirm(null)}
                 className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-all duration-200"
               >
@@ -1861,13 +1972,13 @@ export default function DashboardPage() {
               您确定要永久删除宾客 "<span className="font-semibold text-blue-400">{deleteUnassignedConfirm.guestName}</span>" 吗？
             </p>
             <div className="flex flex-col space-y-3">
-              <button 
+              <button
                 onClick={handleConfirmDeleteUnassigned}
                 className={`w-full px-4 py-3 bg-gradient-to-r ${theme.danger} hover:from-red-500 hover:to-red-400 text-white font-semibold rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
               >
                 确认删除
               </button>
-              <button 
+              <button
                 onClick={() => setDeleteUnassignedConfirm(null)}
                 className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-all duration-200"
               >
@@ -1887,7 +1998,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">SmartSeat</h1>
           <div className="flex items-center gap-2">
             <LogoutButton />
-            <button 
+            <button
               onClick={() => setSidebarOpen(false)}
               className="lg:hidden text-gray-400 hover:text-white"
               aria-label="关闭侧边栏"
@@ -1896,16 +2007,16 @@ export default function DashboardPage() {
             </button>
           </div>
         </div>
-        <button 
-          data-testid="btn-new-project" 
-          onClick={() => { setInputValue(''); setIsModalOpen('newProject'); }} 
+        <button
+          data-testid="btn-new-project"
+          onClick={() => { setInputValue(''); setIsModalOpen('newProject'); }}
           className={`w-full mb-6 px-4 py-3 rounded-xl bg-gradient-to-r ${theme.success} hover:from-green-500 hover:to-green-400 text-white font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
         >
           + 新建项目
         </button>
         <div className="flex-grow overflow-y-auto pr-2 space-y-2">
           {projects.map((proj) => (
-            <div 
+            <div
               key={proj.id}
               className={`group p-4 rounded-xl cursor-pointer transition-all duration-300 ${currentProject?.id === proj.id ? `bg-gradient-to-r ${theme.primary} shadow-lg` : 'bg-gray-700 hover:bg-gray-600 shadow-md hover:shadow-lg'}`}
             >
@@ -1925,7 +2036,7 @@ export default function DashboardPage() {
                   />
                 </div>
               ) : (
-                <div 
+                <div
                   onClick={() => handleLoadProject(proj)}
                   className="flex justify-between items-center"
                 >
@@ -1941,8 +2052,8 @@ export default function DashboardPage() {
                     >
                       ✏️
                     </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(proj.id); }} 
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(proj.id); }}
                       className="text-red-400 hover:text-red-300 transition-all duration-200 hover:scale-110 transform"
                       aria-label={`删除项目 ${proj.name}`}
                     >
@@ -1960,7 +2071,7 @@ export default function DashboardPage() {
       </aside>
 
       {/* 汉堡菜单按钮 */}
-      <button 
+      <button
         onClick={() => setSidebarOpen(true)}
         className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-gray-800 rounded-lg shadow-lg"
         aria-label="打开菜单"
@@ -1971,28 +2082,28 @@ export default function DashboardPage() {
       {/* 主内容区 */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
         {currentProject && (
-          <DndContext 
-            sensors={sensors} 
-            onDragStart={handleDragStart} 
-            onDragEnd={handleDragEnd} 
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             collisionDetection={rectIntersection}
           >
             <div className="mb-6">
-              <input 
-                data-testid="project-name" 
-                type="text" 
-                value={currentProject.name} 
-                onChange={(e) => { 
-                  setCurrentProject(p => p ? {...p, name: e.target.value} : null); 
-                  markChanges(); 
-                }} 
+              <input
+                data-testid="project-name"
+                type="text"
+                value={currentProject.name}
+                onChange={(e) => {
+                  setCurrentProject(p => p ? {...p, name: e.target.value} : null);
+                  markChanges();
+                }}
                 className="text-3xl md:text-4xl font-bold bg-transparent focus:outline-none focus:bg-gray-800 focus:bg-opacity-30 rounded-xl px-4 py-2 w-full transition-all duration-200 border-2 border-transparent focus:border-blue-500"
                 aria-label="项目名称"
               />
             </div>
 
             {isEmpty ? (
-              <EmptyState 
+              <EmptyState
                 onAddGuest={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }}
                 onAiSeating={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
               />
@@ -2000,43 +2111,77 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
                 {/* 未分配区域 */}
                 <div className="lg:col-span-1">
-                  <div className={`bg-gradient-to-br ${theme.cardBg} rounded-2xl p-6 border border-gray-700 shadow-xl`}>
-                    <h3 className="font-bold text-xl mb-6 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                  <div className={`bg-gradient-to-br ${theme.cardBg} rounded-2xl p-6 border border-gray-700 shadow-xl flex flex-col`}>
+                    <h3 className="font-bold text-xl mb-4 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                       未分配宾客 ({unassignedGuests.length})
                     </h3>
-                    <SortableContext 
-                      id="unassigned-area" 
-                      items={unassignedGuests.map(g => g.id)} 
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <DroppableContainer 
-                        id="unassigned-area" 
-                        className="min-h-[120px] rounded-xl"
-                        isDraggingOver={!!activeGuest}
+
+                    {/* Search and Filter UI */}
+                    <div className="mb-4 space-y-3">
+                      <input
+                        type="text"
+                        placeholder="🔍 搜索宾客..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full p-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all duration-200"
+                      />
+                      <div className="flex justify-between gap-1 text-xs">
+                        {(['all', 'unconfirmed', 'confirmed', 'cancelled'] as const).map(status => (
+                          <button
+                            key={status}
+                            onClick={() => setActiveStatusFilter(status)}
+                            className={`px-3 py-1.5 rounded-md font-semibold transition-all duration-200 flex-1 ${
+                              activeStatusFilter === status
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                            }`}
+                          >
+                            {{
+                              all: '全部',
+                              unconfirmed: '未确认',
+                              confirmed: '已确认',
+                              cancelled: '已取消',
+                            }[status]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex-grow overflow-y-auto pr-2 -mr-2">
+                      <SortableContext
+                        id="unassigned-area"
+                        items={unassignedGuests.map(g => g.id)}
+                        strategy={verticalListSortingStrategy}
                       >
-                        <div data-testid="unassigned-list" className="space-y-3">
-                          {unassignedGuests.length === 0 && (
-                            <div className="text-center text-gray-400 text-sm py-8 border-2 border-dashed border-gray-600 rounded-xl bg-gray-800 bg-opacity-30 transition-all duration-200 hover:border-gray-500">
-                              将宾客拖到此处或点击右侧添加
-                            </div>
-                          )}
-                          {unassignedGuests.map(guest => {
-                            const hasRule = currentProject.layout_data?.rules?.notTogether.some(
-                              rule => rule.includes(guest.id)
-                            ) || false;
-                            return (
-                              <DraggableGuest 
-                                key={guest.id} 
-                                guest={guest} 
-                                hasRule={hasRule}
-                                onDelete={(guestId) => handleDeleteGuest(guestId)}
-                                onStatusChange={handleGuestStatusChange}
-                              />
-                            );
-                          })}
-                        </div>
-                      </DroppableContainer>
-                    </SortableContext>
+                        <DroppableContainer
+                          id="unassigned-area"
+                          className="min-h-[120px] rounded-xl"
+                          isDraggingOver={!!activeGuest}
+                        >
+                          <div data-testid="unassigned-list" className="space-y-3">
+                            {filteredUnassignedGuests.length === 0 && (
+                              <div className="text-center text-gray-400 text-sm py-8 border-2 border-dashed border-gray-600 rounded-xl bg-gray-800 bg-opacity-30">
+                                {unassignedGuests.length > 0 ? '没有匹配的宾客' : '将宾客拖到此处或点击右侧添加'}
+                              </div>
+                            )}
+                            {filteredUnassignedGuests.map(guest => {
+                              const hasRule = currentProject.layout_data?.rules?.notTogether.some(
+                                rule => rule.includes(guest.id)
+                              ) || false;
+                              return (
+                                <DraggableGuest
+                                  key={guest.id}
+                                  guest={guest}
+                                  hasRule={hasRule}
+                                  onDelete={(guestId) => handleDeleteGuest(guestId)}
+                                  onStatusChange={handleGuestStatusChange}
+                                />
+                              );
+                            })}
+                          </div>
+                        </DroppableContainer>
+                      </SortableContext>
+                    </div>
                   </div>
                 </div>
 
@@ -2046,30 +2191,30 @@ export default function DashboardPage() {
                     {tables.map(table => {
                       const fillRate = table.capacity ? (table.guests.length / table.capacity) * 100 : 0;
                       const isFull = table.guests.length >= table.capacity;
-                      
+
                       return (
-                        <div 
-                          key={table.id} 
-                          data-testid="table-card" 
+                        <div
+                          key={table.id}
+                          data-testid="table-card"
                           className={`bg-gradient-to-br ${theme.cardBg} p-6 rounded-2xl flex flex-col border-2 transition-all duration-300 transform hover:scale-[1.02] shadow-xl hover:shadow-2xl ${
                             isFull ? 'border-red-500 shadow-red-500/20' : 'border-gray-700 hover:border-gray-600'
                           }`}
                         >
                           <div className="mb-4">
                             <div className="group flex justify-between items-center mb-3 pb-3 border-b border-gray-700">
-                              <input 
-                                type="text" 
-                                value={table.tableName} 
-                                onChange={(e) => { 
-                                  setTables(tables.map(t => 
+                              <input
+                                type="text"
+                                value={table.tableName}
+                                onChange={(e) => {
+                                  setTables(tables.map(t =>
                                     t.id === table.id ? {...t, tableName: e.target.value} : t
-                                  )); 
-                                  markChanges(); 
-                                }} 
+                                  ));
+                                  markChanges();
+                                }}
                                 className="font-bold text-lg bg-transparent w-full focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-2 py-1 transition-all duration-200"
                                 aria-label={`桌子名称: ${table.tableName}`}
                               />
-                              <button 
+                              <button
                                 onClick={() => handleDeleteTable(table.id)}
                                 className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all duration-200 ml-2"
                                 aria-label={`删除 ${table.tableName}`}
@@ -2077,28 +2222,28 @@ export default function DashboardPage() {
                                 🗑️
                               </button>
                             </div>
-                            
+
                             {/* 填充率进度条 */}
                             <div className="w-full bg-gray-700 rounded-full h-2 mb-2 overflow-hidden">
-                              <div 
+                              <div
                                 className={`h-2 rounded-full transition-all duration-500 ${
-                                  fillRate >= 100 ? 'bg-red-500' : 
-                                  fillRate >= 80 ? 'bg-yellow-500' : 
+                                  fillRate >= 100 ? 'bg-red-500' :
+                                  fillRate >= 80 ? 'bg-yellow-500' :
                                   'bg-green-500'
                                 }`}
                                 style={{ width: `${Math.min(fillRate, 100)}%` }}
                               />
                             </div>
-                            
+
                             <div className='flex items-center justify-between text-sm'>
                               <span className={`font-semibold ${isFull ? 'text-red-400' : 'text-gray-400'}`}>
-                                {table.guests.length} / 
+                                {table.guests.length} /
                                 <input
                                   type="number"
                                   value={table.capacity}
                                   onChange={(e) => {
                                     const newCapacity = parseInt(e.target.value) || 0;
-                                    setTables(tables.map(t => 
+                                    setTables(tables.map(t =>
                                       t.id === table.id ? { ...t, capacity: newCapacity } : t
                                     ));
                                     markChanges();
@@ -2113,14 +2258,14 @@ export default function DashboardPage() {
                               </span>
                             </div>
                           </div>
-                          
-                          <SortableContext 
-                            id={table.id} 
-                            items={table.guests.map(g => g.id)} 
+
+                          <SortableContext
+                            id={table.id}
+                            items={table.guests.map(g => g.id)}
                             strategy={verticalListSortingStrategy}
                           >
-                            <DroppableContainer 
-                              id={table.id} 
+                            <DroppableContainer
+                              id={table.id}
                               className="flex-grow rounded-xl min-h-[60px]"
                               isDraggingOver={!!activeGuest}
                             >
@@ -2135,9 +2280,9 @@ export default function DashboardPage() {
                                     rule => rule.includes(guest.id)
                                   ) || false;
                                   return (
-                                    <DraggableGuest 
-                                      key={guest.id} 
-                                      guest={guest} 
+                                    <DraggableGuest
+                                      key={guest.id}
+                                      guest={guest}
                                       hasRule={hasRule}
                                       onDelete={(guestId) => handleRemoveGuestFromTable(guestId, table.id)}
                                       onStatusChange={handleGuestStatusChange}
@@ -2155,7 +2300,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-            
+
             <DragOverlay>
               {activeGuest ? (
                 <div className="p-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl text-white shadow-2xl cursor-grabbing text-sm flex items-center border-2 border-blue-300 transform scale-110">
@@ -2179,7 +2324,7 @@ export default function DashboardPage() {
           <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
             控制面板
           </h3>
-          <button 
+          <button
             onClick={() => setRightPanelOpen(false)}
             className="lg:hidden text-gray-400 hover:text-white"
             aria-label="关闭控制面板"
@@ -2187,17 +2332,17 @@ export default function DashboardPage() {
             ✕
           </button>
         </div>
-        
-        <button 
-          data-testid="btn-save-project" 
-          onClick={handleSaveProject} 
-          disabled={isSaving || !hasUnsavedChanges} 
+
+        <button
+          data-testid="btn-save-project"
+          onClick={handleSaveProject}
+          disabled={isSaving || !hasUnsavedChanges}
           className="w-full p-3 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 font-semibold transition-all duration-300 transform hover:scale-105 disabled:from-gray-600 disabled:to-gray-500 disabled:cursor-not-allowed disabled:transform-none shadow-lg hover:shadow-xl disabled:shadow-none"
           aria-label={hasUnsavedChanges ? '保存更改' : '全部已保存'}
         >
           {isSaving ? '保存中...' : (hasUnsavedChanges ? '💾 保存更改*' : '💾 全部已保存')}
         </button>
-        
+
         <label className="flex items-center gap-3 text-sm text-gray-300 select-none p-3 bg-gray-800 bg-opacity-50 rounded-xl hover:bg-opacity-70 transition-all duration-200 cursor-pointer">
           <input
             data-testid="toggle-autosave"
@@ -2218,56 +2363,64 @@ export default function DashboardPage() {
           />
           <span className="font-medium">自动保存</span>
         </label>
-        
+
         <hr className="border-gray-700 my-2" />
-        
+
         <h3 className="text-lg font-bold text-gray-200">快捷操作</h3>
-        
-        <button 
-          data-testid="btn-add-guest" 
-          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }} 
+
+        <button
+          data-testid="btn-add-guest"
+          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }}
           className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
         >
           添加宾客
         </button>
-        
-        <button 
-          data-testid="btn-add-table" 
-          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addTable'); }} 
+
+        <button
+          data-testid="btn-add-table"
+          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addTable'); }}
           className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
         >
           添加新桌
         </button>
-        
-        <button 
-          data-testid="btn-ai-seating" 
-          onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }} 
+
+        <button
+          data-testid="btn-ai-seating"
+          onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
           className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
         >
           🤖 AI 智能排座
         </button>
-        
-        <button 
-          data-testid="btn-export-pdf" 
-          onClick={handleExportPdf} 
+
+        <button
+          data-testid="btn-export-pdf"
+          onClick={handleExportPdf}
           className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
         >
           导出为 PDF
+        </button>
+
+        <button
+          data-testid="btn-export-place-cards"
+          onClick={handleExportPlaceCards}
+          className="w-full p-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg"
+        >
+          📇 生成桌卡
         </button>
 
         <div className={`p-5 bg-gradient-to-br ${theme.cardBg} rounded-xl text-sm space-y-3 border border-gray-700 shadow-lg`}>
           <h4 className="font-bold text-md mb-3 text-gray-200">关系规则</h4>
           <div className='max-h-28 overflow-y-auto space-y-2 pr-2'>
             {(currentProject?.layout_data?.rules?.notTogether || []).map((rule, index) => (
-              <div 
-                key={`${rule[0]}-${rule[1]}`} 
+              <div
+                key={`${rule[0]}-${rule[1]}`}
                 className="flex justify-between items-center bg-gray-700 p-2 rounded-lg hover:bg-gray-600 transition-all duration-200"
               >
                 <span className="text-xs truncate">
                   {guestNameMap.get(rule[0])} ↔ {guestNameMap.get(rule[1])}
                 </span>
-                <button 
-                  onClick={() => handleDeleteRule(rule)} 
+                <button
+                  onClick={() => handleDeleteRule(rule)}
                   className="text-red-400 hover:text-red-300 transition-all duration-200"
                   aria-label={`删除规则: ${guestNameMap.get(rule[0])} 和 ${guestNameMap.get(rule[1])}`}
                 >
@@ -2279,8 +2432,8 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 text-center py-2">暂无规则</p>
             )}
           </div>
-          <button 
-            onClick={() => setIsModalOpen('addRule')} 
+          <button
+            onClick={() => setIsModalOpen('addRule')}
             className={`w-full mt-3 p-2 text-xs rounded-lg bg-gradient-to-r ${theme.primary} font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
           >
             + 添加规则
@@ -2291,11 +2444,11 @@ export default function DashboardPage() {
 
         <div className={`p-5 bg-gradient-to-br ${theme.cardBg} rounded-xl text-sm space-y-3 border border-gray-700 shadow-lg`}>
           <h4 className="font-bold text-md mb-3 text-gray-200">数据统计</h4>
-          
+
           <StatsChart stats={stats} />
-          
+
           <hr className="border-gray-700 my-3" />
-          
+
           <div className="space-y-2">
             <div className="flex justify-between text-gray-300">
               <span>宾客总数:</span>
@@ -2331,7 +2484,7 @@ export default function DashboardPage() {
       </aside>
 
       {/* 控制面板切换按钮 (移动端) */}
-      <button 
+      <button
         onClick={() => setRightPanelOpen(true)}
         className="lg:hidden fixed bottom-4 right-4 z-20 p-4 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg"
         aria-label="打开控制面板"
