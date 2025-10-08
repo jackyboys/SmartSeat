@@ -13,8 +13,8 @@ import { v4 as uuidv4 } from 'uuid';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import pdfMake from 'pdfmake/build/pdfmake';
-// 确保您已经创建了这个字体配置文件
 import { pdfFonts } from '@/utils/pdfFonts';
+import { QRCodeSVG } from 'qrcode.react';
 
 // 配置pdfMake字体
 pdfMake.fonts = {
@@ -417,7 +417,7 @@ export default function DashboardPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | 'checkIn' | null>(null);
   const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
   const [inputValue, setInputValue] = useState('');
   const [inputCapacity, setInputCapacity] = useState('10');
@@ -890,7 +890,6 @@ export default function DashboardPage() {
     markChanges();
   };
 
-  // ✅ 修复AI排座函数 - 确保每个方案都有唯一ID
   const handleAiSeating = async () => {
     if (!aiGuestList.trim()) {
       showNotification('宾客名单不能为空', 'error');
@@ -911,17 +910,15 @@ export default function DashboardPage() {
       if(!response.ok) throw new Error(result.error || 'AI 服务出错');
 
       if (result.plans) {
-        // ✅ 确保每个方案都有唯一ID
         const plansWithIds = result.plans.map((plan: any, index: number) => ({
           ...plan,
-          id: plan.id || uuidv4() // 如果没有id就生成一个
+          id: plan.id || uuidv4()
         }));
 
         setAiPlans(plansWithIds);
         setSelectedPlanId(plansWithIds[0]?.id || null);
         showNotification(`AI 生成了 ${plansWithIds.length} 个方案，请选择应用！`);
       } else {
-        // 兼容单方案响应（向后兼容）
         const aiTables: SeatingTable[] = result.tables.map((t: any) => ({
           id: uuidv4(),
           tableName: t.tableName,
@@ -944,7 +941,6 @@ export default function DashboardPage() {
     setIsAiLoading(false);
   };
 
-  // ✅ 修复应用选中方案的函数
   const handleApplySelectedPlan = () => {
     const selectedPlan = aiPlans.find(p => p.id === selectedPlanId);
     if (!selectedPlan) {
@@ -972,7 +968,6 @@ export default function DashboardPage() {
     setSelectedPlanId(null);
   };
 
-  // ✅ 新的PDF导出函数 - 使用pdfmake
   const handleExportPdf = () => {
     if (!currentProject) {
       showNotification('请先选择一个项目', 'error');
@@ -982,19 +977,14 @@ export default function DashboardPage() {
     showNotification('正在生成PDF，请稍候...');
 
     try {
-      // 计算统计数据
       const totalGuests = tables.reduce((sum, table) => sum + table.guests.length, 0) + unassignedGuests.length;
       const assignedGuests = tables.reduce((sum, table) => sum + table.guests.length, 0);
 
-      // 定义文档结构
       const docDefinition: any = {
-        // 页面设置
         pageSize: 'A4',
         pageMargins: [40, 60, 40, 60],
 
-        // 内容
         content: [
-          // 标题
           {
             text: currentProject.name,
             style: 'header',
@@ -1002,7 +992,6 @@ export default function DashboardPage() {
             margin: [0, 0, 0, 10]
           },
 
-          // 时间戳
           {
             text: `生成时间: ${new Date().toLocaleString('zh-CN', {
               year: 'numeric',
@@ -1018,14 +1007,12 @@ export default function DashboardPage() {
             margin: [0, 0, 0, 30]
           },
 
-          // 座位安排详情标题
           {
             text: '座位安排详情',
             style: 'sectionHeader',
             margin: [0, 0, 0, 15]
           },
 
-          // 桌子信息
           ...tables.map((table, tableIndex) => {
             const fillRate = table.capacity ? (table.guests.length / table.capacity * 100).toFixed(0) : 0;
             const statusColor = table.guests.length >= table.capacity ? '#ef4444' :
@@ -1034,7 +1021,6 @@ export default function DashboardPage() {
 
             return {
               stack: [
-                // 桌子标题
                 {
                   columns: [
                     {
@@ -1059,7 +1045,6 @@ export default function DashboardPage() {
                   margin: [0, 0, 0, 8]
                 },
 
-                // 宾客列表
                 ...(table.guests.length > 0 ? [
                   {
                     ul: table.guests.map((guest, index) => {
@@ -1088,18 +1073,17 @@ export default function DashboardPage() {
                   }
                 ])
               ],
-              unbreakable: true, // 避免分页时截断桌子
+              unbreakable: true,
               margin: [0, 0, 0, 10]
             };
           }),
 
-          // 未分配宾客
           ...(unassignedGuests.length > 0 ? [
             {
               text: '未分配宾客',
               style: 'sectionHeader',
               margin: [0, 20, 0, 15],
-              pageBreak: tables.length > 8 ? 'before' : undefined // 如果桌子太多，新起一页
+              pageBreak: tables.length > 8 ? 'before' : undefined
             },
             {
               columns: [
@@ -1133,7 +1117,6 @@ export default function DashboardPage() {
             }
           ] : []),
 
-          // 分隔线
           {
             canvas: [
               {
@@ -1147,14 +1130,12 @@ export default function DashboardPage() {
             margin: [0, 20, 0, 20]
           },
 
-          // 统计信息
           {
             text: '统计信息',
             style: 'sectionHeader',
             margin: [0, 0, 0, 15]
           },
 
-          // 统计表格
           {
             columns: [
               {
@@ -1245,7 +1226,6 @@ export default function DashboardPage() {
             columnGap: 20
           },
 
-          // 关系规则（如果有）
           ...(currentProject.layout_data?.rules?.notTogether && currentProject.layout_data.rules.notTogether.length > 0 ? [
             {
               text: '座位规则',
@@ -1268,7 +1248,6 @@ export default function DashboardPage() {
           ] : [])
         ],
 
-        // 样式定义
         styles: {
           header: {
             fontSize: 24,
@@ -1332,14 +1311,12 @@ export default function DashboardPage() {
           }
         },
 
-        // 默认样式
         defaultStyle: {
           font: 'NotoSansSC',
           fontSize: 10,
           lineHeight: 1.3
         },
 
-        // 页眉页脚
         header: (currentPage: number, pageCount: number) => {
           return {
             text: currentProject.name,
@@ -1372,7 +1349,6 @@ export default function DashboardPage() {
         }
       };
 
-      // 生成并下载PDF
       pdfMake.createPdf(docDefinition).download(`${currentProject.name}_座位安排.pdf`);
 
       showNotification('PDF导出成功！');
@@ -1404,7 +1380,6 @@ export default function DashboardPage() {
     showNotification('正在生成桌卡PDF, 请稍候...');
 
     try {
-      // Define the content for pdfmake
       const docDefinition: any = {
         pageSize: 'A4',
         pageMargins: [20, 20, 20, 20],
@@ -1448,7 +1423,6 @@ export default function DashboardPage() {
         },
       };
 
-      // Create a 3-column layout
       const placeCards = assignedGuests.map(guest => {
         return {
           stack: [
@@ -1459,7 +1433,6 @@ export default function DashboardPage() {
         };
       });
 
-      // Distribute cards into a 3-column table
       const body = [];
       for (let i = 0; i < placeCards.length; i += 3) {
         const row = [];
@@ -1470,7 +1443,6 @@ export default function DashboardPage() {
       }
       docDefinition.content[0].table.body = body;
 
-      // Generate and download the PDF
       pdfMake.createPdf(docDefinition).download(`${currentProject.name}_桌卡.pdf`);
 
       showNotification('桌卡PDF已成功生成！');
@@ -1479,6 +1451,18 @@ export default function DashboardPage() {
       console.error('生成桌卡PDF时出错:', error);
       showNotification('生成桌卡失败，请重试', 'error');
     }
+  };
+
+  const handleCopyCheckInLink = () => {
+    if (!currentProject) return;
+    
+    const checkInUrl = `${window.location.origin}/check-in/${currentProject.id}`;
+    
+    navigator.clipboard.writeText(checkInUrl).then(() => {
+      showNotification('签到链接已复制到剪贴板！', 'success');
+    }).catch(() => {
+      showNotification('复制失败，请手动复制', 'error');
+    });
   };
 
   const findContainer = (id: string) => {
@@ -1673,12 +1657,10 @@ export default function DashboardPage() {
         type={confirmDialog.type}
       />
 
-      {/* ✅ Modal根据内容类型使用不同尺寸 */}
       {isModalOpen && (
         <Modal
           onClose={() => {
             setIsModalOpen(null);
-            // 关闭时重置AI方案状态
             if (isModalOpen === 'aiSeating') {
               setAiPlans([]);
               setSelectedPlanId(null);
@@ -1818,7 +1800,6 @@ export default function DashboardPage() {
             </>
           )}
 
-          {/* ✅ AI排座对话框 - 修复了按钮交互问题 */}
           {isModalOpen === 'aiSeating' && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">AI 智能排座</h3>
@@ -1930,6 +1911,50 @@ export default function DashboardPage() {
               </button>
             </>
           )}
+
+          {isModalOpen === 'checkIn' && currentProject && (
+            <>
+              <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">📱 现场签到模式</h3>
+              
+              <div className="space-y-6">
+                <div className="bg-gray-700/50 p-6 rounded-xl border border-gray-600">
+                  <p className="text-sm text-gray-300 mb-4">使用以下二维码或链接让宾客现场签到：</p>
+                  
+                  <div className="flex justify-center mb-6 bg-white p-4 rounded-lg">
+                    <QRCodeSVG 
+  value={`${window.location.origin}/check-in/${currentProject.id}`}
+  size={200}
+  level="H"
+/>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-sm text-gray-400 font-medium block">签到链接</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={`${window.location.origin}/check-in/${currentProject.id}`}
+                      className="w-full p-3 bg-gray-800 rounded-lg border border-gray-600 text-gray-300 text-sm select-all"
+                      onClick={(e) => (e.target as HTMLInputElement).select()}
+                    />
+                    
+                    <button
+                      onClick={handleCopyCheckInLink}
+                      className={`w-full p-3 bg-gradient-to-r ${theme.primary} rounded-lg font-semibold hover:from-blue-500 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+                    >
+                      📋 复制链接
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+                  <p className="text-sm text-yellow-200">
+                    💡 <strong>提示：</strong>将此二维码打印出来放置在入口处，或将链接分享给宾客，他们即可通过手机完成签到。
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
         </Modal>
       )}
 
@@ -1989,7 +2014,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 左侧边栏 */}
       <aside className={`
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         fixed lg:relative w-72 h-full bg-gradient-to-b from-gray-800 to-gray-900 p-6 flex flex-col border-r border-gray-700 shadow-2xl z-40 transition-transform duration-300
@@ -2070,7 +2094,6 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* 汉堡菜单按钮 */}
       <button
         onClick={() => setSidebarOpen(true)}
         className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-gray-800 rounded-lg shadow-lg"
@@ -2079,7 +2102,6 @@ export default function DashboardPage() {
         ☰
       </button>
 
-      {/* 主内容区 */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
         {currentProject && (
           <DndContext
@@ -2109,14 +2131,12 @@ export default function DashboardPage() {
               />
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 md:gap-8">
-                {/* 未分配区域 */}
                 <div className="lg:col-span-1">
                   <div className={`bg-gradient-to-br ${theme.cardBg} rounded-2xl p-6 border border-gray-700 shadow-xl flex flex-col`}>
                     <h3 className="font-bold text-xl mb-4 text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
                       未分配宾客 ({unassignedGuests.length})
                     </h3>
 
-                    {/* Search and Filter UI */}
                     <div className="mb-4 space-y-3">
                       <input
                         type="text"
@@ -2185,7 +2205,6 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* 桌子区域 */}
                 <div className="lg:col-span-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {tables.map(table => {
@@ -2223,7 +2242,6 @@ export default function DashboardPage() {
                               </button>
                             </div>
 
-                            {/* 填充率进度条 */}
                             <div className="w-full bg-gray-700 rounded-full h-2 mb-2 overflow-hidden">
                               <div
                                 className={`h-2 rounded-full transition-all duration-500 ${
@@ -2315,7 +2333,6 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* 右侧控制面板 */}
       <aside className={`
         ${rightPanelOpen ? 'translate-x-0' : 'translate-x-full'}
         fixed lg:relative lg:translate-x-0 w-80 h-full bg-gradient-to-b from-gray-800 to-gray-900 p-6 flex flex-col gap-y-4 border-l border-gray-700 shadow-2xl z-30 transition-transform duration-300 overflow-y-auto
@@ -2390,6 +2407,14 @@ export default function DashboardPage() {
           className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
         >
           🤖 AI 智能排座
+        </button>
+
+        <button
+          data-testid="btn-check-in"
+          onClick={() => setIsModalOpen('checkIn')}
+          className={`w-full p-3 rounded-xl bg-gradient-to-r ${theme.warning} hover:from-yellow-500 hover:to-yellow-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl`}
+        >
+          📱 现场签到模式
         </button>
 
         <button
@@ -2483,7 +2508,6 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* 控制面板切换按钮 (移动端) */}
       <button
         onClick={() => setRightPanelOpen(true)}
         className="lg:hidden fixed bottom-4 right-4 z-20 p-4 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full shadow-lg"
