@@ -134,7 +134,7 @@ const ConfirmDialog = ({
 
 // --- 优化后的通知组件 ---
 const Notification = ({ notification, onClose }: {
-  notification: { type: 'success' | 'error', message: string } | null;
+  notification: { type: 'success' | 'error' | 'info', message: string } | null;
   onClose: () => void;
 }) => {
   if (!notification) return null;
@@ -144,13 +144,15 @@ const Notification = ({ notification, onClose }: {
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-            notification.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+            notification.type === 'success' ? 'bg-green-500/20 text-green-400' : 
+            notification.type === 'error' ? 'bg-red-500/20 text-red-400' :
+            'bg-blue-500/20 text-blue-400'
           }`}>
-            <span className="text-xl">{notification.type === 'success' ? '✓' : '✕'}</span>
+            <span className="text-xl">{notification.type === 'success' ? '✓' : notification.type === 'error' ? '✕' : 'ℹ'}</span>
           </div>
           <div className="flex-1">
             <p className="font-semibold mb-1 text-white">
-              {notification.type === 'success' ? '成功' : '错误'}
+              {notification.type === 'success' ? '成功' : notification.type === 'error' ? '错误' : '提示'}
             </p>
             <p className="text-sm text-gray-300">{notification.message}</p>
           </div>
@@ -416,7 +418,7 @@ export default function DashboardPage() {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | 'checkIn' | null>(null);
   const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
   const [inputValue, setInputValue] = useState('');
@@ -438,6 +440,7 @@ export default function DashboardPage() {
     onConfirm: () => void;
     type?: 'warning' | 'danger' | 'info';
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const [activeCollaborators, setActiveCollaborators] = useState<string[]>([]);
 
   // Add these two new states for search and filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -484,10 +487,28 @@ export default function DashboardPage() {
     };
   }, [tables, allGuests]);
 
-  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
   };
+
+  // 广播布局变更给其他协作者
+  const broadcastLayoutChange = useCallback((newTables: SeatingTable[], newUnassignedGuests: Guest[]) => {
+    if (!currentProject || !user) return;
+    
+    const channel = supabase.channel(`project-${currentProject.id}`);
+    channel.send({
+      type: 'broadcast',
+      event: 'layout-change',
+      payload: {
+        tables: newTables,
+        unassignedGuests: newUnassignedGuests,
+        rules: currentProject.layout_data?.rules,
+        editorId: user.id,
+        timestamp: Date.now()
+      },
+    });
+  }, [currentProject, user, supabase]);
 
   const showConfirm = (title: string, message: string, onConfirm: () => void, type: 'warning' | 'danger' | 'info' = 'warning') => {
     setConfirmDialog({
@@ -733,10 +754,14 @@ export default function DashboardPage() {
 
         if(type === 'guest') {
           const newGuests: Guest[] = names.map(name => ({ id: uuidv4(), name, status: 'unconfirmed' }));
-          setUnassignedGuests(g => [...g, ...newGuests]);
+          const updatedGuests = [...unassignedGuests, ...newGuests];
+          setUnassignedGuests(updatedGuests);
+          broadcastLayoutChange(tables, updatedGuests);
         } else {
           const newTables: SeatingTable[] = names.map(name => ({ id: uuidv4(), tableName: name, guests: [], capacity: parseInt(inputCapacity) || 10 }));
-          setTables(t => [...t, ...newTables]);
+          const updatedTables = [...tables, ...newTables];
+          setTables(updatedTables);
+          broadcastLayoutChange(updatedTables, unassignedGuests);
         }
         showNotification(`成功导入 ${names.length} 个条目！`);
         setIsModalOpen(null);
@@ -753,7 +778,9 @@ export default function DashboardPage() {
     const names = inputValue.split('\n').map(n => n.trim()).filter(Boolean);
     if (names.length === 0) { showNotification('请输入宾客姓名', 'error'); return; }
     const newGuests: Guest[] = names.map(name => ({ id: uuidv4(), name, status: 'unconfirmed' }));
-    setUnassignedGuests([...unassignedGuests, ...newGuests]);
+    const updatedGuests = [...unassignedGuests, ...newGuests];
+    setUnassignedGuests(updatedGuests);
+    broadcastLayoutChange(tables, updatedGuests);
     setIsModalOpen(null); setInputValue(''); markChanges();
   };
 
@@ -762,7 +789,9 @@ export default function DashboardPage() {
     const capacity = parseInt(inputCapacity);
     if (isNaN(capacity) || capacity < 1) { showNotification('容量必须是大于0的数字', 'error'); return; }
     const newTable: SeatingTable = { id: uuidv4(), tableName: inputValue, guests: [], capacity };
-    setTables([...tables, newTable]);
+    const updatedTables = [...tables, newTable];
+    setTables(updatedTables);
+    broadcastLayoutChange(updatedTables, unassignedGuests);
     setIsModalOpen(null); setInputValue(''); setInputCapacity('10');
     setTimeout(() => { markChanges(); }, 0);
   };
@@ -776,8 +805,11 @@ export default function DashboardPage() {
   const handleConfirmDeleteUnassigned = () => {
     if (!deleteUnassignedConfirm) return;
     const { guestId } = deleteUnassignedConfirm;
-    setUnassignedGuests(prev => prev.filter(g => g.id !== guestId));
-    setTables(prev => prev.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)})));
+    const updatedGuests = unassignedGuests.filter(g => g.id !== guestId);
+    const updatedTables = tables.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)}));
+    setUnassignedGuests(updatedGuests);
+    setTables(updatedTables);
+    broadcastLayoutChange(updatedTables, updatedGuests);
     setDeleteUnassignedConfirm(null);
     markChanges();
   };
@@ -795,15 +827,20 @@ export default function DashboardPage() {
     if (!guest) return;
 
     if (action === 'move') {
-      setTables(prev => prev.map(t =>
+      const updatedTables = tables.map(t =>
         t.id === tableId
           ? {...t, guests: t.guests.filter(g => g.id !== guestId)}
           : t
-      ));
-      setUnassignedGuests(prev => [...prev, guest]);
+      );
+      const updatedGuests = [...unassignedGuests, guest];
+      setTables(updatedTables);
+      setUnassignedGuests(updatedGuests);
+      broadcastLayoutChange(updatedTables, updatedGuests);
       showNotification('宾客已移动到未分配区');
     } else {
-      setTables(prev => prev.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)})));
+      const updatedTables = tables.map(t => ({...t, guests: t.guests.filter(g => g.id !== guestId)}));
+      setTables(updatedTables);
+      broadcastLayoutChange(updatedTables, unassignedGuests);
       showNotification('宾客已彻底删除');
     }
     setDeleteConfirm(null);
@@ -812,11 +849,14 @@ export default function DashboardPage() {
 
   const handleGuestStatusChange = (guestId: string, newStatus: GuestStatus) => {
     const updateUser = (users: Guest[]) => users.map(g => g.id === guestId ? { ...g, status: newStatus } : g);
-    setUnassignedGuests(updateUser);
-    setTables(prevTables => prevTables.map(t => ({
+    const updatedGuests = updateUser(unassignedGuests);
+    const updatedTables = tables.map(t => ({
       ...t,
       guests: updateUser(t.guests)
-    })));
+    }));
+    setUnassignedGuests(updatedGuests);
+    setTables(updatedTables);
+    broadcastLayoutChange(updatedTables, updatedGuests);
     markChanges();
   };
 
@@ -826,8 +866,11 @@ export default function DashboardPage() {
       '您确定要删除这张桌子吗？桌上所有宾客将移至未分配区。',
       () => {
         const tableToMove = tables.find(t => t.id === tableId);
-        if (tableToMove) setUnassignedGuests([...unassignedGuests, ...tableToMove.guests]);
-        setTables(tables.filter(t => t.id !== tableId));
+        const updatedGuests = tableToMove ? [...unassignedGuests, ...tableToMove.guests] : unassignedGuests;
+        const updatedTables = tables.filter(t => t.id !== tableId);
+        setUnassignedGuests(updatedGuests);
+        setTables(updatedTables);
+        broadcastLayoutChange(updatedTables, updatedGuests);
         markChanges();
       },
       'warning'
@@ -869,6 +912,7 @@ export default function DashboardPage() {
     showNotification('规则添加成功！');
     setIsModalOpen(null);
     setRuleGuests({ g1: '', g2: '' });
+    broadcastLayoutChange(tables, unassignedGuests);
     markChanges();
   };
 
@@ -887,6 +931,7 @@ export default function DashboardPage() {
       };
       return { ...proj, layout_data: newLayout };
     });
+    broadcastLayoutChange(tables, unassignedGuests);
     markChanges();
   };
 
@@ -931,6 +976,7 @@ export default function DashboardPage() {
         }));
         setTables(aiTables);
         setUnassignedGuests([]);
+        broadcastLayoutChange(aiTables, []);
         showNotification('AI 智能排座已完成！');
         markChanges();
         setIsModalOpen(null);
@@ -961,6 +1007,7 @@ export default function DashboardPage() {
 
     setTables(aiTables);
     setUnassignedGuests([]);
+    broadcastLayoutChange(aiTables, []);
     showNotification(`已应用"${selectedPlan.name}"方案！`);
     markChanges();
     setIsModalOpen(null);
@@ -1494,17 +1541,23 @@ export default function DashboardPage() {
         setUnassignedGuests(guests => {
           const oldIndex = guests.findIndex(g => g.id === activeId);
           const newIndex = guests.findIndex(g => g.id === overId);
-          return arrayMove(guests, oldIndex, newIndex);
+          const newGuests = arrayMove(guests, oldIndex, newIndex);
+          broadcastLayoutChange(tables, newGuests);
+          return newGuests;
         });
       } else {
-        setTables(currentTables => currentTables.map(table => {
-          if (table.id === originalContainerId) {
-            const oldIndex = table.guests.findIndex(g => g.id === activeId);
-            const newIndex = table.guests.findIndex(g => g.id === overId);
-            return { ...table, guests: arrayMove(table.guests, oldIndex, newIndex) };
-          }
-          return table;
-        }));
+        setTables(currentTables => {
+          const newTables = currentTables.map(table => {
+            if (table.id === originalContainerId) {
+              const oldIndex = table.guests.findIndex(g => g.id === activeId);
+              const newIndex = table.guests.findIndex(g => g.id === overId);
+              return { ...table, guests: arrayMove(table.guests, oldIndex, newIndex) };
+            }
+            return table;
+          });
+          broadcastLayoutChange(newTables, unassignedGuests);
+          return newTables;
+        });
       }
     } else {
       const rules = currentProject?.layout_data?.rules?.notTogether || [];
@@ -1563,6 +1616,7 @@ export default function DashboardPage() {
       }
       setUnassignedGuests(nextUnassigned);
       setTables(nextTables);
+      broadcastLayoutChange(nextTables, nextUnassigned);
     }
     markChanges();
   };
@@ -1597,6 +1651,66 @@ export default function DashboardPage() {
 
     return () => subscription.unsubscribe();
   }, [router, fetchProjectsAndLoadFirst, supabase.auth]);
+
+  // 实时协作：订阅项目变更
+  useEffect(() => {
+    if (!currentProject || !user) return;
+
+    const channel = supabase
+      .channel(`project-${currentProject.id}`)
+      .on('broadcast', { event: 'layout-change' }, (payload: any) => {
+        // 避免响应自己的变更
+        if (payload.payload.editorId !== user.id) {
+          const { tables: newTables, unassignedGuests: newUnassignedGuests, rules } = payload.payload;
+          
+          setTables(newTables || []);
+          setUnassignedGuests(newUnassignedGuests || []);
+          
+          if (rules && currentProject.layout_data) {
+            setCurrentProject({
+              ...currentProject,
+              layout_data: {
+                ...currentProject.layout_data,
+                rules
+              }
+            });
+          }
+          
+          showNotification('👥 布局已由协作者更新', 'info');
+        }
+      })
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const collaborators = Object.keys(state).map(key => state[key][0].user_email).filter(email => email !== user.email);
+        setActiveCollaborators(collaborators);
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        const newCollaborator = newPresences[0]?.user_email;
+        if (newCollaborator && newCollaborator !== user.email) {
+          showNotification(`👋 ${newCollaborator} 加入了协作`, 'info');
+        }
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        const leftCollaborator = leftPresences[0]?.user_email;
+        if (leftCollaborator && leftCollaborator !== user.email) {
+          showNotification(`👋 ${leftCollaborator} 离开了协作`, 'info');
+        }
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ 
+            user_id: user.id,
+            user_email: user.email,
+            online_at: new Date().toISOString()
+          });
+        }
+      });
+
+    return () => {
+      channel.untrack();
+      supabase.removeChannel(channel);
+    };
+  }, [currentProject?.id, user?.id, supabase]);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1922,10 +2036,10 @@ export default function DashboardPage() {
                   
                   <div className="flex justify-center mb-6 bg-white p-4 rounded-lg">
                     <QRCodeSVG 
-  value={`${window.location.origin}/check-in/${currentProject.id}`}
-  size={200}
-  level="H"
-/>
+                      value={`${window.location.origin}/check-in/${currentProject.id}`}
+                      size={200}
+                      level="H"
+                    />
                   </div>
 
                   <div className="space-y-3">
@@ -2225,9 +2339,11 @@ export default function DashboardPage() {
                                 type="text"
                                 value={table.tableName}
                                 onChange={(e) => {
-                                  setTables(tables.map(t =>
+                                  const updatedTables = tables.map(t =>
                                     t.id === table.id ? {...t, tableName: e.target.value} : t
-                                  ));
+                                  );
+                                  setTables(updatedTables);
+                                  broadcastLayoutChange(updatedTables, unassignedGuests);
                                   markChanges();
                                 }}
                                 className="font-bold text-lg bg-transparent w-full focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-2 py-1 transition-all duration-200"
@@ -2261,9 +2377,11 @@ export default function DashboardPage() {
                                   value={table.capacity}
                                   onChange={(e) => {
                                     const newCapacity = parseInt(e.target.value) || 0;
-                                    setTables(tables.map(t =>
+                                    const updatedTables = tables.map(t =>
                                       t.id === table.id ? { ...t, capacity: newCapacity } : t
-                                    ));
+                                    );
+                                    setTables(updatedTables);
+                                    broadcastLayoutChange(updatedTables, unassignedGuests);
                                     markChanges();
                                   }}
                                   className="w-12 bg-transparent text-center focus:outline-none focus:bg-gray-700 focus:bg-opacity-30 rounded px-1 ml-1"
@@ -2349,6 +2467,23 @@ export default function DashboardPage() {
             ✕
           </button>
         </div>
+
+        {activeCollaborators.length > 0 && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm font-semibold text-blue-300">正在协作</span>
+            </div>
+            <div className="text-xs text-gray-300 space-y-1">
+              {activeCollaborators.map((email, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+                  <span>{email}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <button
           data-testid="btn-save-project"
