@@ -5,22 +5,18 @@ import { createClient } from '@/utils/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import LogoutButton from '@/components/LogoutButton';
-import { DndContext, rectIntersection, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
+import { DndContext, rectIntersection, DragEndEvent, DragStartEvent, DragOverEvent, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { v4 as uuidv4 } from 'uuid';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import pdfMake from 'pdfmake/build/pdfmake';
-import { pdfFonts } from '@/utils/pdfFonts';
 import { QRCodeSVG } from 'qrcode.react';
 
-// 配置pdfMake字体
-pdfMake.fonts = {
-  NotoSansSC: pdfFonts.NotoSansSC,
-  Roboto: pdfFonts.Roboto
-};
+// ✅ Task 4: 导入优化后的常量和工具函数
+import { MODAL_TYPES, type ModalType } from '@/constants/modalTypes';
+import { generateSeatingPdf, generatePlaceCardsPdf } from '@/utils/pdfGenerator';
 
 // 主题的配置
 const theme = {
@@ -427,7 +423,8 @@ export default function DashboardPage() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<'newProject' | 'addGuest' | 'addTable' | 'aiSeating' | 'addRule' | 'checkIn' | 'inviteCollaborator' | null>(null);
+  // ✅ Task 4: 使用 ModalType 替代魔法字符串类型定义
+  const [isModalOpen, setIsModalOpen] = useState<ModalType>(null);
   const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
   const [inputValue, setInputValue] = useState('');
   const [inputCapacity, setInputCapacity] = useState('10');
@@ -478,11 +475,13 @@ export default function DashboardPage() {
     const assignedGuestsCount = tables.reduce((sum, table) => sum + table.guests.length, 0);
     const totalGuests = allGuests.length;
     const tableCount = tables.length;
-    const avgGuestsPerTable = tableCount > 0 ? (assignedGuestsCount / tableCount).toFixed(1) : 0;
+    const avgGuestsPerTable = tableCount > 0 ? parseFloat((assignedGuestsCount / tableCount).toFixed(1)) : 0;
 
     const confirmedCount = allGuests.filter(g => g.status === 'confirmed').length;
     const unconfirmedCount = allGuests.filter(g => g.status === 'unconfirmed' || g.status === undefined).length;
     const cancelledCount = allGuests.filter(g => g.status === 'cancelled').length;
+    const checkedInCount = 0; // ✅ Task 4: 签到功能未实现，暂时为0
+    const unassignedGuestsCount = unassignedGuests.length; // ✅ Task 4: 添加未分配人数统计
     const tableFillRate = tables.map(t => ({
       name: t.tableName,
       rate: t.capacity ? (t.guests.length / t.capacity) * 100 : 0
@@ -495,10 +494,12 @@ export default function DashboardPage() {
       confirmedCount,
       unconfirmedCount,
       cancelledCount,
+      checkedInCount,
       assignedGuestsCount,
+      unassignedGuestsCount,
       tableFillRate,
     };
-  }, [tables, allGuests]);
+  }, [tables, allGuests, unassignedGuests]);
 
   // ==================================================================
   // ========= 🚀 FIX: WRAP showNotification IN useCallback ==========
@@ -1254,379 +1255,8 @@ export default function DashboardPage() {
     showNotification('正在生成PDF，请稍候...');
 
     try {
-      const totalGuests = tables.reduce((sum, table) => sum + table.guests.length, 0) + unassignedGuests.length;
-      const assignedGuests = tables.reduce((sum, table) => sum + table.guests.length, 0);
-
-      const docDefinition: any = {
-        pageSize: 'A4',
-        pageMargins: [40, 60, 40, 60],
-
-        content: [
-          {
-            text: currentProject.name,
-            style: 'header',
-            alignment: 'center',
-            margin: [0, 0, 0, 10]
-          },
-
-          {
-            text: `生成时间: ${new Date().toLocaleString('zh-CN', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              hour12: false
-            })}`,
-            style: 'timestamp',
-            alignment: 'center',
-            margin: [0, 0, 0, 30]
-          },
-
-          {
-            text: '座位安排详情',
-            style: 'sectionHeader',
-            margin: [0, 0, 0, 15]
-          },
-
-          ...tables.map((table, tableIndex) => {
-            const fillRate = table.capacity ? (table.guests.length / table.capacity * 100).toFixed(0) : 0;
-            const statusColor = table.guests.length >= table.capacity ? '#ef4444' :
-                                table.guests.length >= table.capacity * 0.8 ? '#f59e0b' :
-                                '#10b981';
-
-            return {
-              stack: [
-                {
-                  columns: [
-                    {
-                      text: `${table.tableName}`,
-                      style: 'tableTitle',
-                      width: '*'
-                    },
-                    {
-                      text: `${table.guests.length}/${table.capacity}人`,
-                      style: 'tableCapacity',
-                      color: statusColor,
-                      width: 'auto'
-                    },
-                    {
-                      text: `(${fillRate}%)`,
-                      style: 'tableFillRate',
-                      color: statusColor,
-                      width: 'auto',
-                      margin: [5, 0, 0, 0]
-                    }
-                  ],
-                  margin: [0, 0, 0, 8]
-                },
-
-                ...(table.guests.length > 0 ? [
-                  {
-                    ul: table.guests.map((guest, index) => {
-                      const statusText = guest.status === 'confirmed' ? '✓' :
-                                         guest.status === 'cancelled' ? '✕' :
-                                         '○';
-                      const statusColor = guest.status === 'confirmed' ? '#10b981' :
-                                          guest.status === 'cancelled' ? '#ef4444' :
-                                          '#f59e0b';
-
-                      return {
-                        text: [
-                          { text: `${index + 1}. `, style: 'guestNumber' },
-                          { text: guest.name, style: 'guestName' },
-                          { text: ` ${statusText}`, color: statusColor, bold: true }
-                        ]
-                      };
-                    }),
-                    margin: [20, 0, 0, 15]
-                  }
-                ] : [
-                  {
-                    text: '(暂无宾客)',
-                    style: 'emptyText',
-                    margin: [20, 0, 0, 15]
-                  }
-                ])
-              ],
-              unbreakable: true,
-              margin: [0, 0, 0, 10]
-            };
-          }),
-
-          ...(unassignedGuests.length > 0 ? [
-            {
-              text: '未分配宾客',
-              style: 'sectionHeader',
-              margin: [0, 20, 0, 15],
-              pageBreak: tables.length > 8 ? 'before' : undefined
-            },
-            {
-              columns: [
-                {
-                  text: `共 ${unassignedGuests.length} 人`,
-                  style: 'tableCapacity',
-                  color: '#ef4444',
-                  width: 'auto'
-                }
-              ],
-              margin: [0, 0, 0, 8]
-            },
-            {
-              ul: unassignedGuests.map((guest, index) => {
-                const statusText = guest.status === 'confirmed' ? '✓' :
-                                   guest.status === 'cancelled' ? '✕' :
-                                   '○';
-                const statusColor = guest.status === 'confirmed' ? '#10b981' :
-                                    guest.status === 'cancelled' ? '#ef4444' :
-                                    '#f59e0b';
-
-                return {
-                  text: [
-                    { text: `${index + 1}. `, style: 'guestNumber' },
-                    { text: guest.name, style: 'guestName' },
-                    { text: ` ${statusText}`, color: statusColor, bold: true }
-                  ]
-                };
-              }),
-              margin: [20, 0, 0, 20]
-            }
-          ] : []),
-
-          {
-            canvas: [
-              {
-                type: 'line',
-                x1: 0, y1: 0,
-                x2: 515, y2: 0,
-                lineWidth: 1,
-                lineColor: '#e5e7eb'
-              }
-            ],
-            margin: [0, 20, 0, 20]
-          },
-
-          {
-            text: '统计信息',
-            style: 'sectionHeader',
-            margin: [0, 0, 0, 15]
-          },
-
-          {
-            columns: [
-              {
-                width: '50%',
-                stack: [
-                  {
-                    text: '基础统计',
-                    style: 'subHeader',
-                    margin: [0, 0, 0, 10]
-                  },
-                  {
-                    table: {
-                      widths: ['*', 'auto'],
-                      body: [
-                        [
-                          { text: '总桌数', style: 'statLabel' },
-                          { text: stats.tableCount.toString(), style: 'statValue', alignment: 'right' }
-                        ],
-                        [
-                          { text: '总宾客数', style: 'statLabel' },
-                          { text: totalGuests.toString(), style: 'statValue', alignment: 'right' }
-                        ],
-                        [
-                          { text: '已安排宾客', style: 'statLabel' },
-                          { text: assignedGuests.toString(), style: 'statValue', alignment: 'right', color: '#10b981' }
-                        ],
-                        [
-                          { text: '未安排宾客', style: 'statLabel' },
-                          { text: unassignedGuests.length.toString(), style: 'statValue', alignment: 'right', color: unassignedGuests.length > 0 ? '#ef4444' : '#6b7280' }
-                        ],
-                        [
-                          { text: '平均每桌', style: 'statLabel' },
-                          { text: stats.avgGuestsPerTable.toString(), style: 'statValue', alignment: 'right' }
-                        ]
-                      ]
-                    },
-                    layout: {
-                      hLineWidth: () => 0.5,
-                      vLineWidth: () => 0,
-                      hLineColor: () => '#e5e7eb',
-                      paddingLeft: () => 8,
-                      paddingRight: () => 8,
-                      paddingTop: () => 6,
-                      paddingBottom: () => 6
-                    }
-                  }
-                ]
-              },
-              {
-                width: '50%',
-                stack: [
-                  {
-                    text: '宾客状态',
-                    style: 'subHeader',
-                    margin: [0, 0, 0, 10]
-                  },
-                  {
-                    table: {
-                      widths: ['*', 'auto'],
-                      body: [
-                        [
-                          { text: '已确认', style: 'statLabel' },
-                          { text: stats.confirmedCount.toString(), style: 'statValue', alignment: 'right', color: '#10b981' }
-                        ],
-                        [
-                          { text: '未确认', style: 'statLabel' },
-                          { text: stats.unconfirmedCount.toString(), style: 'statValue', alignment: 'right', color: '#f59e0b' }
-                        ],
-                        [
-                          { text: '已取消', style: 'statLabel' },
-                          { text: stats.cancelledCount.toString(), style: 'statValue', alignment: 'right', color: '#ef4444' }
-                        ]
-                      ]
-                    },
-                    layout: {
-                      hLineWidth: () => 0.5,
-                      vLineWidth: () => 0,
-                      hLineColor: () => '#e5e7eb',
-                      paddingLeft: () => 8,
-                      paddingRight: () => 8,
-                      paddingTop: () => 6,
-                      paddingBottom: () => 6
-                    }
-                  }
-                ]
-              }
-            ],
-            columnGap: 20
-          },
-
-          ...(currentProject.layout_data?.rules?.notTogether && currentProject.layout_data.rules.notTogether.length > 0 ? [
-            {
-              text: '座位规则',
-              style: 'sectionHeader',
-              margin: [0, 20, 0, 15]
-            },
-            {
-              text: '以下宾客不宜同桌：',
-              style: 'normalText',
-              margin: [0, 0, 0, 8]
-            },
-            {
-              ul: currentProject.layout_data.rules.notTogether.map(rule => {
-                const name1 = guestNameMap.get(rule[0]) || '未知';
-                const name2 = guestNameMap.get(rule[1]) || '未知';
-                return `${name1} ↔ ${name2}`;
-              }),
-              margin: [20, 0, 0, 0]
-            }
-          ] : [])
-        ],
-
-        styles: {
-          header: {
-            fontSize: 24,
-            bold: true,
-            color: '#1e40af'
-          },
-          timestamp: {
-            fontSize: 9,
-            color: '#6b7280',
-            italics: true
-          },
-          sectionHeader: {
-            fontSize: 16,
-            bold: true,
-            color: '#374151',
-            decoration: 'underline',
-            decorationColor: '#e5e7eb'
-          },
-          subHeader: {
-            fontSize: 12,
-            bold: true,
-            color: '#4b5563'
-          },
-          tableTitle: {
-            fontSize: 13,
-            bold: true,
-            color: '#1f2937'
-          },
-          tableCapacity: {
-            fontSize: 11,
-            bold: true
-          },
-          tableFillRate: {
-            fontSize: 9
-          },
-          guestNumber: {
-            fontSize: 10,
-            color: '#9ca3af'
-          },
-          guestName: {
-            fontSize: 10,
-            color: '#374151'
-          },
-          emptyText: {
-            fontSize: 9,
-            color: '#9ca3af',
-            italics: true
-          },
-          statLabel: {
-            fontSize: 10,
-            color: '#4b5563'
-          },
-          statValue: {
-            fontSize: 10,
-            bold: true,
-            color: '#1f2937'
-          },
-          normalText: {
-            fontSize: 10,
-            color: '#374151'
-          }
-        },
-
-        defaultStyle: {
-          font: 'NotoSansSC',
-          fontSize: 10,
-          lineHeight: 1.3
-        },
-
-        header: (currentPage: number, pageCount: number) => {
-          return {
-            text: currentProject.name,
-            alignment: 'center',
-            margin: [0, 20, 0, 0],
-            fontSize: 9,
-            color: '#9ca3af'
-          };
-        },
-        footer: (currentPage: number, pageCount: number) => {
-          return {
-            columns: [
-              {
-                text: `生成自 SmartSeat`,
-                alignment: 'left',
-                margin: [40, 0, 0, 0],
-                fontSize: 8,
-                color: '#9ca3af'
-              },
-              {
-                text: `第 ${currentPage} 页 / 共 ${pageCount} 页`,
-                alignment: 'right',
-                margin: [0, 0, 40, 0],
-                fontSize: 8,
-                color: '#9ca3af'
-              }
-            ],
-            margin: [0, 10, 0, 0]
-          };
-        }
-      };
-
-      pdfMake.createPdf(docDefinition).download(`${currentProject.name}_座位安排.pdf`);
+      // ✅ Task 4: 使用抽离的 PDF 生成工具函数
+      generateSeatingPdf(currentProject, tables, unassignedGuests, stats, guestNameMap);
 
       showNotification('PDF导出成功！');
 
@@ -1657,73 +1287,9 @@ export default function DashboardPage() {
     showNotification('正在生成桌卡PDF, 请稍候...');
 
     try {
-      const docDefinition: any = {
-        pageSize: 'A4',
-        pageMargins: [20, 20, 20, 20],
-        content: [
-          {
-            layout: {
-              hLineWidth: () => 0,
-              vLineWidth: () => 0,
-              paddingLeft: () => 15,
-              paddingRight: () => 15,
-              paddingTop: () => 15,
-              paddingBottom: () => 15,
-            },
-            table: {
-              widths: ['*', '*', '*'],
-              body: [],
-            },
-          },
-        ],
-        styles: {
-          guestName: {
-            font: 'NotoSansSC',
-            fontSize: 24,
-            bold: true,
-            alignment: 'center',
-            margin: [0, 10, 0, 10],
-            color: '#1a202c',
-          },
-          tableName: {
-            font: 'NotoSansSC',
-            fontSize: 10,
-            alignment: 'center',
-            color: '#718096',
-          },
-          card: {
-            margin: [0, 0, 0, 15],
-          },
-        },
-        defaultStyle: {
-          font: 'Roboto',
-        },
-      };
-
-      const placeCards = assignedGuests.map(guest => {
-        return {
-          stack: [
-            { text: guest.guestName, style: 'guestName' },
-            { text: `桌号: ${guest.tableName}`, style: 'tableName' },
-          ],
-          style: 'card',
-        };
-      });
-
-      const body = [];
-      for (let i = 0; i < placeCards.length; i += 3) {
-        const row = [];
-        row.push(placeCards[i] || {});
-        row.push(placeCards[i + 1] || {});
-        row.push(placeCards[i + 2] || {});
-        body.push(row);
-      }
-      docDefinition.content[0].table.body = body;
-
-      pdfMake.createPdf(docDefinition).download(`${currentProject.name}_桌卡.pdf`);
-
+      // ✅ Task 4: 使用抽离的 PDF 生成工具函数
+      generatePlaceCardsPdf(currentProject, tables);
       showNotification('桌卡PDF已成功生成！');
-
     } catch (error) {
       console.error('生成桌卡PDF时出错:', error);
       showNotification('生成桌卡失败，请重试', 'error');
@@ -1811,7 +1377,8 @@ export default function DashboardPage() {
 
       let draggedGuest: Guest | undefined;
       let nextUnassigned = [...unassignedGuests];
-      let nextTables = JSON.parse(JSON.stringify(tables));
+      // ✅ Task 4: 使用 structuredClone 替代 JSON.parse(JSON.stringify)
+      let nextTables = structuredClone(tables);
 
       if (originalContainerId === 'unassigned-area') {
         const index = nextUnassigned.findIndex(g => g.id === activeId);
@@ -1920,7 +1487,11 @@ export default function DashboardPage() {
       })
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
-        const collaborators = Object.keys(state).map(key => state[key][0].user_email).filter(email => email !== user.email);
+        // 🔧 使用 Object.values 和可选链安全获取协作者邮箱
+        const collaborators = Object.values(state)
+          .map(presences => presences?.[0] as any) // 获取每个用户的第一个 presence
+          .map(presence => presence?.user_email) // 安全访问 user_email
+          .filter((email): email is string => typeof email === 'string' && email !== user.email); // 类型守卫，过滤掉无效值
         setActiveCollaborators(collaborators);
       })
       .on('presence', { event: 'join' }, ({ newPresences }) => {
@@ -2019,14 +1590,14 @@ export default function DashboardPage() {
         <Modal
           onClose={() => {
             setIsModalOpen(null);
-            if (isModalOpen === 'aiSeating') {
+            if (isModalOpen === MODAL_TYPES.AI_SEATING) {
               setAiPlans([]);
               setSelectedPlanId(null);
             }
           }}
-          size={isModalOpen === 'aiSeating' && aiPlans.length > 0 ? 'lg' : 'md'}
+          size={isModalOpen === MODAL_TYPES.AI_SEATING && aiPlans.length > 0 ? 'lg' : 'md'}
         >
-          {isModalOpen === 'newProject' && (
+          {isModalOpen === MODAL_TYPES.NEW_PROJECT && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">创建新项目</h3>
               <input
@@ -2046,7 +1617,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {isModalOpen === 'addGuest' && (
+          {isModalOpen === MODAL_TYPES.ADD_GUEST && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">添加宾客</h3>
               <div className="flex justify-center mb-6 border-b border-gray-700">
@@ -2093,7 +1664,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {isModalOpen === 'addTable' && (
+          {isModalOpen === MODAL_TYPES.ADD_TABLE && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">添加新桌</h3>
               <div className="flex justify-center mb-6 border-b border-gray-700">
@@ -2158,7 +1729,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {isModalOpen === 'aiSeating' && (
+          {isModalOpen === MODAL_TYPES.AI_SEATING && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">AI 智能排座</h3>
 
@@ -2232,7 +1803,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {isModalOpen === 'addRule' && (
+          {isModalOpen === MODAL_TYPES.ADD_RULE && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">添加"不宜同桌"规则</h3>
               <div className='space-y-5'>
@@ -2270,7 +1841,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {isModalOpen === 'checkIn' && currentProject && (
+          {isModalOpen === MODAL_TYPES.CHECK_IN && currentProject && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">📱 现场签到模式</h3>
               
@@ -2315,7 +1886,7 @@ export default function DashboardPage() {
           )}
 
           {/* ✅ 新增：邀请协作者 Modal */}
-          {isModalOpen === 'inviteCollaborator' && (
+          {isModalOpen === MODAL_TYPES.INVITE_COLLABORATOR && (
             <>
               <h3 className="text-2xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400">
                 邀请协作者
@@ -2463,7 +2034,7 @@ export default function DashboardPage() {
         </div>
         <button
           data-testid="btn-new-project"
-          onClick={() => { setInputValue(''); setIsModalOpen('newProject'); }}
+          onClick={() => { setInputValue(''); setIsModalOpen(MODAL_TYPES.NEW_PROJECT); }}
           className={`w-full mb-5 px-4 py-2.5 rounded-lg bg-gradient-to-r ${theme.success} hover:from-green-500 hover:to-green-400 text-white font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           + 新建项目
@@ -2562,8 +2133,8 @@ export default function DashboardPage() {
 
             {isEmpty ? (
               <EmptyState
-                onAddGuest={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }}
-                onAiSeating={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
+                onAddGuest={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen(MODAL_TYPES.ADD_GUEST); }}
+                onAiSeating={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen(MODAL_TYPES.AI_SEATING); }}
               />
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-5 md:gap-6">
@@ -2844,7 +2415,7 @@ export default function DashboardPage() {
 
         <button
           data-testid="btn-add-guest"
-          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addGuest'); }}
+          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen(MODAL_TYPES.ADD_GUEST); }}
           className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           添加宾客
@@ -2852,7 +2423,7 @@ export default function DashboardPage() {
 
         <button
           data-testid="btn-add-table"
-          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen('addTable'); }}
+          onClick={() => { setInputValue(''); setModalInputView('manual'); setIsModalOpen(MODAL_TYPES.ADD_TABLE); }}
           className="w-full p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 font-semibold transition-all duration-300 transform hover:scale-105 shadow-sm hover:shadow-md"
         >
           添加新桌
@@ -2860,7 +2431,7 @@ export default function DashboardPage() {
 
         <button
           data-testid="btn-ai-seating"
-          onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen('aiSeating'); }}
+          onClick={() => { setAiGuestList(unassignedGuests.map(g => g.name).join('\n')); setIsModalOpen(MODAL_TYPES.AI_SEATING); }}
           className={`w-full p-2.5 rounded-lg bg-gradient-to-r ${theme.primary} hover:from-blue-500 hover:to-blue-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           🤖 AI 智能排座
@@ -2868,7 +2439,7 @@ export default function DashboardPage() {
 
         <button
           data-testid="btn-check-in"
-          onClick={() => setIsModalOpen('checkIn')}
+          onClick={() => setIsModalOpen(MODAL_TYPES.CHECK_IN)}
           className={`w-full p-2.5 rounded-lg bg-gradient-to-r ${theme.warning} hover:from-yellow-500 hover:to-yellow-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
           📱 现场签到模式
@@ -2878,7 +2449,7 @@ export default function DashboardPage() {
         <button
           onClick={() => {
             setInviteEmail('');
-            setIsModalOpen('inviteCollaborator');
+            setIsModalOpen(MODAL_TYPES.INVITE_COLLABORATOR);
           }}
           className={`w-full p-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
         >
@@ -2926,7 +2497,7 @@ export default function DashboardPage() {
             )}
           </div>
           <button
-            onClick={() => setIsModalOpen('addRule')}
+            onClick={() => setIsModalOpen(MODAL_TYPES.ADD_RULE)}
             className={`w-full mt-3 p-2 text-xs rounded-lg bg-gradient-to-r ${theme.primary} font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}
           >
             + 添加规则
