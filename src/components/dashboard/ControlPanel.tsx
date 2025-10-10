@@ -1,14 +1,71 @@
 'use client';
 
+import { useMemo } from 'react';
 import { theme, NotTogetherRule } from './types';
 import { StatsChart } from './StatsChart';
-import { useSeatingStore, useStats, useGuestNameMap } from '@/store/seatingStore';
+import { useSeatingStore } from '@/store/seatingStore';
 
 export function ControlPanel() {
   // 从 Zustand store 获取状态和 actions
-  const stats = useStats();
   const currentProject = useSeatingStore((state) => state.currentProject);
-  const guestNameMap = useGuestNameMap();
+  const tables = useSeatingStore((state) => state.tables);
+  const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
+  
+  // 使用 useMemo 计算 allGuests，避免每次渲染都创建新数组
+  const allGuests = useMemo(() => {
+    return [
+      ...unassignedGuests,
+      ...tables.flatMap((t) => t.guests),
+    ];
+  }, [unassignedGuests, tables]);
+  
+  // 使用 useMemo 计算 stats，避免每次渲染都创建新对象
+  const stats = useMemo(() => {
+    const assignedGuestsCount = tables.reduce(
+      (sum, table) => sum + table.guests.length,
+      0
+    );
+    const totalGuests = allGuests.length;
+    const tableCount = tables.length;
+    const avgGuestsPerTable =
+      tableCount > 0 ? (assignedGuestsCount / tableCount).toFixed(1) : '0';
+
+    const confirmedCount = allGuests.filter((g) => g.status === 'confirmed').length;
+    const unconfirmedCount = allGuests.filter(
+      (g) => g.status === 'unconfirmed' || g.status === undefined
+    ).length;
+    const cancelledCount = allGuests.filter((g) => g.status === 'cancelled').length;
+    const checkedInCount = allGuests.filter((g) => g.status === 'checked-in').length;
+
+    const tableFillRate = tables.map((t) => ({
+      name: t.tableName,
+      rate: t.capacity ? (t.guests.length / t.capacity) * 100 : 0,
+    }));
+
+    const checkInRate =
+      totalGuests > 0
+        ? ((checkedInCount / (totalGuests - cancelledCount)) * 100).toFixed(1)
+        : '0.0';
+
+    return {
+      totalGuests,
+      tableCount,
+      avgGuestsPerTable,
+      confirmedCount,
+      unconfirmedCount,
+      cancelledCount,
+      checkedInCount,
+      checkInRate,
+      assignedGuestsCount,
+      unassignedGuestsCount: unassignedGuests.length,
+      tableFillRate,
+    };
+  }, [tables, unassignedGuests, allGuests]);
+  
+  const guestNameMap = useMemo(() => {
+    return new Map(allGuests.map((g) => [g.id, g.name]));
+  }, [allGuests]);
+  
   const rightPanelOpen = useSeatingStore((state) => state.rightPanelOpen);
   
   const toggleRightPanel = useSeatingStore((state) => state.toggleRightPanel);
@@ -22,7 +79,6 @@ export function ControlPanel() {
   const deleteRule = useSeatingStore((state) => state.deleteRule);
   const resetLayout = useSeatingStore((state) => state.resetLayout);
   const showConfirm = useSeatingStore((state) => state.showConfirm);
-  const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
   
   // 处理各种操作
   const handleAddTable = () => {

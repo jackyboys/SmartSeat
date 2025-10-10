@@ -5,10 +5,11 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { GuestStatus, statusColors, statusTooltips, theme } from './types';
 import { SortableGuest } from './SortableGuest';
-import { useSeatingStore, useFilteredUnassignedGuests } from '@/store/seatingStore';
+import { useSeatingStore } from '@/store/seatingStore';
 
 export function UnassignedGuestsPanel() {
   // 从 Zustand store 获取状态和 actions
+  const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
   const searchQuery = useSeatingStore((state) => state.searchQuery);
   const activeStatusFilter = useSeatingStore((state) => state.activeStatusFilter);
   const leftPanelOpen = useSeatingStore((state) => state.leftPanelOpen);
@@ -22,8 +23,18 @@ export function UnassignedGuestsPanel() {
   const deleteUnassignedGuest = useSeatingStore((state) => state.deleteUnassignedGuest);
   const checkInGuest = useSeatingStore((state) => state.checkInGuest);
   
-  // 使用 selector 获取筛选后的宾客
-  const filteredUnassignedGuests = useFilteredUnassignedGuests();
+  // 使用 useMemo 计算筛选后的宾客
+  const filteredUnassignedGuests = useMemo(() => {
+    return unassignedGuests.filter((guest) => {
+      const matchesSearch = guest.name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesFilter =
+        activeStatusFilter === 'all' ||
+        guest.status === activeStatusFilter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [unassignedGuests, searchQuery, activeStatusFilter]);
 
   const { setNodeRef: setUnassignedRef } = useDroppable({
     id: 'unassigned',

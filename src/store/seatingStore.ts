@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
+import { shallow } from 'zustand/shallow';
 import type { User } from '@supabase/supabase-js';
 import type { Guest, SeatingTable, Project, ProjectMember, GuestStatus, NotTogetherRule } from '@/components/dashboard/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -730,22 +731,27 @@ export const useAllGuests = () => {
 
 // 获取筛选后的未分配宾客
 export const useFilteredUnassignedGuests = () => {
-  return useSeatingStore((state) => {
-    return state.unassignedGuests.filter((guest) => {
-      const matchesSearch = guest.name
-        .toLowerCase()
-        .includes(state.searchQuery.toLowerCase());
-      const matchesFilter =
-        state.activeStatusFilter === 'all' ||
-        guest.status === state.activeStatusFilter;
-      return matchesSearch && matchesFilter;
-    });
+  const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
+  const searchQuery = useSeatingStore((state) => state.searchQuery);
+  const activeStatusFilter = useSeatingStore((state) => state.activeStatusFilter);
+  
+  return unassignedGuests.filter((guest) => {
+    const matchesSearch = guest.name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesFilter =
+      activeStatusFilter === 'all' ||
+      guest.status === activeStatusFilter;
+    return matchesSearch && matchesFilter;
   });
 };
 
-// 获取宾客名称映射
+// 获取宾客名称映射（已废弃，请在组件中使用 useMemo）
+// 保留导出以避免破坏现有代码，但建议组件直接使用 useAllGuests 并用 useMemo 创建 Map
 export const useGuestNameMap = () => {
   const allGuests = useAllGuests();
+  // 注意：这会在每次调用时创建新的 Map
+  // 建议在组件中使用 useMemo 来缓存结果
   return new Map(allGuests.map((g) => [g.id, g.name]));
 };
 
