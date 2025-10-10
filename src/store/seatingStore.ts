@@ -577,17 +577,92 @@ export const useSeatingStore = create<SeatingStore>()(
       },
 
       handleDragEnd: ({ overId, activeId }) => {
-        // 这个函数的实现比较复杂,需要在实际使用时根据具体需求实现
-        // 这里提供基本框架
         set({ activeGuest: null });
-        
-        // TODO: 实现完整的拖拽逻辑
-        // 需要处理:
-        // 1. 从未分配区拖到桌子
-        // 2. 从桌子拖到未分配区
-        // 3. 桌子之间拖拽
-        // 4. 同一容器内排序
-        // 5. 锁定宾客的特殊处理
+        if (!overId) return;
+
+        const state = get();
+        const { tables } = state;
+
+        // 查找拖拽的宾客
+        const sourceTableId = activeId.toString().split('-')[0];
+        const sourceTable = tables.find((t) => t.id === sourceTableId);
+        const guest = sourceTable?.guests.find((g) => `${sourceTableId}-${g.id}` === activeId);
+
+        if (!guest) return;
+
+        // 🔒 检查是否为锁定宾客 (已签到)
+        if (guest.locked || guest.status === 'checked-in') {
+          const confirmMove = window.confirm(
+            `宾客 "${guest.name}" 已签到，移动将解除签到状态。确定要移动吗？`
+          );
+          if (!confirmMove) return; // 用户取消操作
+
+          // 用户确认后，解锁并重置状态
+          guest.locked = false;
+          guest.status = 'confirmed' as GuestStatus;
+        }
+
+        // 处理目标容器
+        if (overId === 'unassigned') {
+          // 拖到未分配区
+          const updatedTables = tables.map((t) => {
+            if (t.id === sourceTableId) {
+              return {
+                ...t,
+                guests: t.guests.filter((g) => g.id !== guest.id),
+              };
+            }
+            return t;
+          });
+
+          const updatedGuest = { 
+            ...guest, 
+            status: 'confirmed' as GuestStatus,
+            locked: false 
+          };
+
+          set({
+            tables: updatedTables,
+            unassignedGuests: [...state.unassignedGuests, updatedGuest],
+            hasUnsavedChanges: true,
+          });
+        } else {
+          // 拖到其他桌子
+          const targetTableId = overId.toString().split('-')[0];
+          const targetTable = tables.find((t) => t.id === targetTableId);
+
+          if (!targetTable) return;
+
+          // 检查容量
+          if (targetTableId !== sourceTableId && targetTable.guests.length >= targetTable.capacity) {
+            state.showNotification(`桌子已满 (${targetTable.capacity}人)`);
+            return;
+          }
+
+          // 执行移动
+          const updatedTables = tables.map((t) => {
+            if (t.id === sourceTableId) {
+              // 从源桌子移除
+              return {
+                ...t,
+                guests: t.guests.filter((g) => g.id !== guest.id),
+              };
+            } else if (t.id === targetTableId) {
+              // 添加到目标桌子
+              const updatedGuest = { 
+                ...guest, 
+                status: 'confirmed' as GuestStatus 
+              };
+              return {
+                ...t,
+                guests: [...t.guests, updatedGuest],
+              };
+            }
+            return t;
+          });
+
+          set({ tables: updatedTables, hasUnsavedChanges: true });
+        }
       },
 
       // ==================== 规则管理 Actions ====================
