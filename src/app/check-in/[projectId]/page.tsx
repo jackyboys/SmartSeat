@@ -192,7 +192,7 @@ export default function CheckInPage() {
         return g;
       };
 
-      layout.tables = layout.tables.map(table => ({ ...table, guests: table.guests.map(updateGuestState) }));
+      layout.tables = layout.tables.map((table: any) => ({ ...table, guests: table.guests.map(updateGuestState) }));
       layout.unassignedGuests = layout.unassignedGuests.map(updateGuestState);
 
       if (!guestFound) throw new Error("在项目中未找到该宾客。");

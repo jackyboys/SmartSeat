@@ -18,6 +18,21 @@ import { QRCodeSVG } from 'qrcode.react';
 import { MODAL_TYPES, type ModalType } from '@/constants/modalTypes';
 import { generateSeatingPdf, generatePlaceCardsPdf } from '@/utils/pdfGenerator';
 
+// ✅ Task B: 导入 Zustand 状态管理
+import { useSeatingStore } from '@/store/seatingStore';
+
+// ✅ Task B Step 2: 导入自定义 Hooks
+import { useNotifications } from '@/hooks/useNotifications';
+// TODO: 集成这些 hooks (见 REFACTORING_SUMMARY.md)
+// import { useProjectManager } from '@/hooks/useProjectManager';
+// import { useRealtimeCollaboration } from '@/hooks/useRealtimeCollaboration';
+
+// TODO: 使用这些组件简化 JSX (见 REFACTORING_SUMMARY.md)
+// import { UnassignedGuestsPanel } from '@/components/dashboard/UnassignedGuestsPanel';
+// import { TablesGrid } from '@/components/dashboard/TablesGrid';
+// import { ControlPanel } from '@/components/dashboard/ControlPanel';
+// import { ModalWrapper } from '@/components/dashboard/ModalWrapper';
+
 // 主题的配置
 const theme = {
   primary: 'from-blue-600 to-blue-500',
@@ -28,13 +43,16 @@ const theme = {
 };
 
 // --- 数据结构 ---
-type GuestStatus = 'confirmed' | 'unconfirmed' | 'cancelled';
+// ✅ Task B Step 3: 添加 'checked-in' 状态以匹配组件类型
+type GuestStatus = 'confirmed' | 'unconfirmed' | 'cancelled' | 'checked-in';
 
 interface Guest {
   id: string;
   name: string;
   status?: GuestStatus;
   avatarUrl?: string;
+  locked?: boolean; // 签到后锁定状态
+  checkInTime?: string; // 签到时间
 }
 
 interface SeatingTable {
@@ -70,12 +88,14 @@ const statusColors: { [key in GuestStatus]: string } = {
   confirmed: 'bg-green-500',
   unconfirmed: 'bg-yellow-500',
   cancelled: 'bg-red-500',
+  'checked-in': 'bg-blue-500',
 };
 
 const statusTooltips: { [key in GuestStatus]: string } = {
   confirmed: '已确认',
   unconfirmed: '未确认',
   cancelled: '已取消',
+  'checked-in': '已签到',
 };
 
 // --- 自定义确认对话框 ---
@@ -411,50 +431,79 @@ const StatsChart = ({ stats }: { stats: any }) => {
 // --- 主页面 ---
 export default function DashboardPage() {
   const router = useRouter();
+  
+  // ✅ Task B: 保留 user 状态（与 Supabase 认证流程直接相关）
   const [user, setUser] = useState<User | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
-  const [tables, setTables] = useState<SeatingTable[]>([]);
-  const [unassignedGuests, setUnassignedGuests] = useState<Guest[]>([]);
-  const [activeGuest, setActiveGuest] = useState<Guest | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info', message: string } | null>(null);
-  // ✅ Task 4: 使用 ModalType 替代魔法字符串类型定义
-  const [isModalOpen, setIsModalOpen] = useState<ModalType>(null);
-  const [modalInputView, setModalInputView] = useState<'manual' | 'import'>('manual');
-  const [inputValue, setInputValue] = useState('');
-  const [inputCapacity, setInputCapacity] = useState('10');
-  const [aiGuestList, setAiGuestList] = useState('');
-  const [aiPlans, setAiPlans] = useState<any[]>([]);
-  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ guestId: string; tableId: string; guestName: string } | null>(null);
-  const [deleteUnassignedConfirm, setDeleteUnassignedConfirm] = useState<{ guestId: string; guestName: string } | null>(null);
-  const [ruleGuests, setRuleGuests] = useState<{ g1: string, g2: string }>({ g1: '', g2: '' });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
-  const [editingProjectName, setEditingProjectName] = useState('');
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    onCancel?: () => void;
-    type?: 'warning' | 'danger' | 'info';
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  
+  // ✅ 实时协作状态
   const [activeCollaborators, setActiveCollaborators] = useState<string[]>([]);
-
-  // ✅ 新增：协作者管理相关状态
-  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-
-  // Add these two new states for search and filter
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeStatusFilter, setActiveStatusFilter] = useState<GuestStatus | 'all'>('all');
+  
+  // ✅ Task B Step 2: 使用自定义 Hooks
+  const { notification, showNotification, hideNotification } = useNotifications();
+  
+  // ✅ Task B: 从 Zustand Store 获取所有状态
+  const projects = useSeatingStore((state) => state.projects);
+  const currentProject = useSeatingStore((state) => state.currentProject);
+  const tables = useSeatingStore((state) => state.tables);
+  const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
+  const activeGuest = useSeatingStore((state) => state.activeGuest);
+  const isLoading = useSeatingStore((state) => state.isLoading);
+  const isSaving = useSeatingStore((state) => state.isSaving);
+  const isAiLoading = useSeatingStore((state) => state.isAiLoading);
+  const hasUnsavedChanges = useSeatingStore((state) => state.hasUnsavedChanges);
+  const isModalOpen = useSeatingStore((state) => state.isModalOpen);
+  const modalInputView = useSeatingStore((state) => state.modalInputView);
+  const inputValue = useSeatingStore((state) => state.inputValue);
+  const inputCapacity = useSeatingStore((state) => state.inputCapacity);
+  const aiGuestList = useSeatingStore((state) => state.aiGuestList);
+  const aiPlans = useSeatingStore((state) => state.aiPlans);
+  const selectedPlanId = useSeatingStore((state) => state.selectedPlanId);
+  const deleteConfirm = useSeatingStore((state) => state.deleteConfirm);
+  const deleteUnassignedConfirm = useSeatingStore((state) => state.deleteUnassignedConfirm);
+  const ruleGuests = useSeatingStore((state) => state.ruleGuests);
+  const sidebarOpen = useSeatingStore((state) => state.sidebarOpen);
+  const rightPanelOpen = useSeatingStore((state) => state.rightPanelOpen);
+  const editingProjectId = useSeatingStore((state) => state.editingProjectId);
+  const editingProjectName = useSeatingStore((state) => state.editingProjectName);
+  const confirmDialog = useSeatingStore((state) => state.confirmDialog);
+  const projectMembers = useSeatingStore((state) => state.projectMembers);
+  const inviteEmail = useSeatingStore((state) => state.inviteEmail);
+  const searchQuery = useSeatingStore((state) => state.searchQuery);
+  const activeStatusFilter = useSeatingStore((state) => state.activeStatusFilter);
+  
+  // ✅ Task B: 从 Zustand Store 获取所有 Actions
+  const setProjects = useSeatingStore((state) => state.setProjects);
+  const setCurrentProject = useSeatingStore((state) => state.setCurrentProject);
+  const setTables = useSeatingStore((state) => state.setTables);
+  const setUnassignedGuests = useSeatingStore((state) => state.setUnassignedGuests);
+  const setActiveGuest = useSeatingStore((state) => state.setActiveGuest);
+  const setIsLoading = useSeatingStore((state) => state.setIsLoading);
+  const setIsSaving = useSeatingStore((state) => state.setIsSaving);
+  const setIsAiLoading = useSeatingStore((state) => state.setIsAiLoading);
+  const setHasUnsavedChanges = useSeatingStore((state) => state.setHasUnsavedChanges);
+  const setIsModalOpen = useSeatingStore((state) => state.setIsModalOpen);
+  const setModalInputView = useSeatingStore((state) => state.setModalInputView);
+  const setInputValue = useSeatingStore((state) => state.setInputValue);
+  const setInputCapacity = useSeatingStore((state) => state.setInputCapacity);
+  const setAiGuestList = useSeatingStore((state) => state.setAiGuestList);
+  const setAiPlans = useSeatingStore((state) => state.setAiPlans);
+  const setSelectedPlanId = useSeatingStore((state) => state.setSelectedPlanId);
+  const setDeleteConfirm = useSeatingStore((state) => state.setDeleteConfirm);
+  const setDeleteUnassignedConfirm = useSeatingStore((state) => state.setDeleteUnassignedConfirm);
+  const setRuleGuests = useSeatingStore((state) => state.setRuleGuests);
+  const setSidebarOpen = useSeatingStore((state) => state.setSidebarOpen);
+  const setRightPanelOpen = useSeatingStore((state) => state.setRightPanelOpen);
+  const setEditingProjectId = useSeatingStore((state) => state.setEditingProjectId);
+  const setEditingProjectName = useSeatingStore((state) => state.setEditingProjectName);
+  const showConfirm = useSeatingStore((state) => state.showConfirm);
+  const hideConfirm = useSeatingStore((state) => state.hideConfirm);
+  const setProjectMembers = useSeatingStore((state) => state.setProjectMembers);
+  const setInviteEmail = useSeatingStore((state) => state.setInviteEmail);
+  const setSearchQuery = useSeatingStore((state) => state.setSearchQuery);
+  const setActiveStatusFilter = useSeatingStore((state) => state.setActiveStatusFilter);
+  const markChanges = useSeatingStore((state) => state.markChanges);
+  const clearChanges = useSeatingStore((state) => state.clearChanges);
 
   const filteredUnassignedGuests = useMemo(() => {
     return unassignedGuests.filter(guest => {
@@ -501,13 +550,7 @@ export default function DashboardPage() {
     };
   }, [tables, allGuests, unassignedGuests]);
 
-  // ==================================================================
-  // ========= 🚀 FIX: WRAP showNotification IN useCallback ==========
-  // ==================================================================
-  const showNotification = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  }, []);
+  // ✅ Task B: showNotification 和 showConfirm 现在从 Zustand Store 获取，无需本地定义
 
   // 广播布局变更给其他协作者
   const broadcastLayoutChange = useCallback((newTables: SeatingTable[], newUnassignedGuests: Guest[]) => {
@@ -526,26 +569,6 @@ export default function DashboardPage() {
       },
     });
   }, [currentProject, user, supabase]);
-
-  const showConfirm = (
-    title: string,
-    message: string,
-    onConfirm: () => void,
-    type: 'warning' | 'danger' | 'info' = 'warning',
-    onCancel?: () => void
-  ) => {
-    setConfirmDialog({
-      isOpen: true,
-      title,
-      message,
-      onConfirm: () => {
-        onConfirm();
-        setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {} });
-      },
-      onCancel,
-      type
-    });
-  };
 
   // ✅ 修改后的 fetchProjectMembers 函数
   const fetchProjectMembers = useCallback(async () => {
@@ -796,8 +819,10 @@ export default function DashboardPage() {
     return savedProject;
   }, [currentProject, user, hasUnsavedChanges, tables, unassignedGuests, projects, isSaving, supabase, showNotification]);
 
-  const markChanges = useCallback(() => {
-    setHasUnsavedChanges(true);
+  // ✅ Task B: markChanges 现在从 Zustand Store 获取
+  // 本地保留自动保存逻辑的包装
+  const markChangesWithAutoSave = useCallback(() => {
+    markChanges(); // 调用 Store 的 markChanges
     if (autoSaveTimeout.current) {
       clearTimeout(autoSaveTimeout.current);
     }
@@ -806,7 +831,7 @@ export default function DashboardPage() {
         handleSaveProject();
       }, 1000);
     }
-  }, [handleSaveProject, autoSaveEnabled]);
+  }, [markChanges, handleSaveProject, autoSaveEnabled]);
 
   const loadProjectData = (project: Project) => {
     setCurrentProject(project);
@@ -1319,41 +1344,96 @@ export default function DashboardPage() {
     setActiveGuest(allGuests.find(g => g.id === guestId) || null);
   };
 
+  // 新的函数，用于移动并解锁宾客
+  const moveAndUnlockGuest = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeId = active.id as string;
+    let guestToMove: Guest | undefined = allGuests.find(g => g.id === activeId);
+
+    if (!guestToMove) return;
+
+    // 关键改变：创建一个解锁后的宾客副本
+    const unlockedGuest = { ...guestToMove, locked: false };
+
+    // 从原位置移除
+    let updatedTables = tables.map(t => ({
+      ...t,
+      guests: t.guests.filter(g => g.id !== activeId)
+    }));
+    let updatedUnassigned = unassignedGuests.filter(g => g.id !== activeId);
+
+    const overId = over.id as string;
+    const overContainerId = findContainer(overId);
+
+    // 放置到新位置
+    if (overContainerId === 'unassigned-area') {
+      updatedUnassigned.push(unlockedGuest);
+    } else {
+      const targetTable = updatedTables.find(t => t.id === overContainerId);
+      if (targetTable) {
+        const overGuestIndex = targetTable.guests.findIndex(g => g.id === overId);
+        if (overGuestIndex !== -1) {
+          targetTable.guests.splice(overGuestIndex, 0, unlockedGuest);
+        } else {
+          targetTable.guests.push(unlockedGuest);
+        }
+      }
+    }
+    
+    setTables(updatedTables);
+    setUnassignedGuests(updatedUnassigned);
+    broadcastLayoutChange(updatedTables, updatedUnassigned);
+    markChanges();
+    showNotification(`宾客 "${unlockedGuest.name}" 已被移动并解锁。`, 'info');
+  };
+
+  // 更新后的 handleDragEnd 函数
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveGuest(null);
     const { active, over } = event;
     if (!over) return;
+
     const activeId = active.id as string;
     const overId = over.id as string;
-
     const originalContainerId = findContainer(activeId);
     const overContainerId = findContainer(overId);
 
-    if (!originalContainerId || !overContainerId) return;
+    if (!originalContainerId || !overContainerId || activeId === overId) return;
 
+    const draggedGuest = allGuests.find(g => g.id === activeId);
+    const isMovingWithinUnassigned = originalContainerId === 'unassigned-area' && overContainerId === 'unassigned-area';
+
+    if (draggedGuest && draggedGuest.locked && !isMovingWithinUnassigned) {
+      showConfirm(
+        '管理员操作确认',
+        `宾客 "${draggedGuest.name}" 已签到并锁定。\n\n您确定要移动他/她的座位吗？\n此操作将同时为该宾客解锁。`,
+        () => {
+          moveAndUnlockGuest(event);
+        },
+        'warning'
+      );
+      return;
+    }
+    
+    // --- 常规拖拽逻辑 (保持不变) ---
     if (originalContainerId === overContainerId) {
-      if (activeId === overId) return;
       if (originalContainerId === 'unassigned-area') {
         setUnassignedGuests(guests => {
           const oldIndex = guests.findIndex(g => g.id === activeId);
           const newIndex = guests.findIndex(g => g.id === overId);
-          const newGuests = arrayMove(guests, oldIndex, newIndex);
-          broadcastLayoutChange(tables, newGuests);
-          return newGuests;
+          return arrayMove(guests, oldIndex, newIndex);
         });
       } else {
-        setTables(currentTables => {
-          const newTables = currentTables.map(table => {
-            if (table.id === originalContainerId) {
-              const oldIndex = table.guests.findIndex(g => g.id === activeId);
-              const newIndex = table.guests.findIndex(g => g.id === overId);
-              return { ...table, guests: arrayMove(table.guests, oldIndex, newIndex) };
-            }
-            return table;
-          });
-          broadcastLayoutChange(newTables, unassignedGuests);
-          return newTables;
-        });
+        setTables(currentTables => currentTables.map(table => {
+          if (table.id === originalContainerId) {
+            const oldIndex = table.guests.findIndex(g => g.id === activeId);
+            const newIndex = table.guests.findIndex(g => g.id === overId);
+            return { ...table, guests: arrayMove(table.guests, oldIndex, newIndex) };
+          }
+          return table;
+        }));
       }
     } else {
       const rules = currentProject?.layout_data?.rules?.notTogether || [];
@@ -1375,40 +1455,35 @@ export default function DashboardPage() {
         }
       }
 
-      let draggedGuest: Guest | undefined;
+      let guestToMove: Guest | undefined;
       let nextUnassigned = [...unassignedGuests];
-      // ✅ Task 4: 使用 structuredClone 替代 JSON.parse(JSON.stringify)
       let nextTables = structuredClone(tables);
 
       if (originalContainerId === 'unassigned-area') {
         const index = nextUnassigned.findIndex(g => g.id === activeId);
-        [draggedGuest] = nextUnassigned.splice(index, 1);
+        [guestToMove] = nextUnassigned.splice(index, 1);
       } else {
         const table = nextTables.find((t: SeatingTable) => t.id === originalContainerId);
         if (table) {
           const index = table.guests.findIndex((g: Guest) => g.id === activeId);
-          [draggedGuest] = table.guests.splice(index, 1);
+          [guestToMove] = table.guests.splice(index, 1);
         }
       }
 
-      if (!draggedGuest) return;
+      if (!guestToMove) return;
 
       if (overContainerId === 'unassigned-area') {
         const overGuestIndex = nextUnassigned.findIndex(g => g.id === overId);
-        if (overGuestIndex !== -1) {
-          nextUnassigned.splice(overGuestIndex, 0, draggedGuest);
-        } else {
-          nextUnassigned.push(draggedGuest);
-        }
+        nextUnassigned.splice(overGuestIndex, 0, guestToMove);
       } else {
         const table = nextTables.find((t: SeatingTable) => t.id === overContainerId);
         if(table) {
-          const overGuestIndex = table.guests.findIndex((g: Guest) => g.id === overId);
-          if (overGuestIndex !== -1) {
-            table.guests.splice(overGuestIndex, 0, draggedGuest);
-          } else {
-            table.guests.push(draggedGuest);
+          if (table.guests.length >= table.capacity) {
+            showNotification(`"${table.tableName}" 已满。`, 'error');
+            return;
           }
+          const overGuestIndex = table.guests.findIndex((g: Guest) => g.id === overId);
+          table.guests.splice(overGuestIndex, 0, guestToMove);
         }
       }
       setUnassignedGuests(nextUnassigned);
@@ -1570,7 +1645,7 @@ export default function DashboardPage() {
         }
       `}</style>
 
-      <Notification notification={notification} onClose={() => setNotification(null)} />
+      <Notification notification={notification} onClose={hideNotification} />
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
@@ -1581,7 +1656,7 @@ export default function DashboardPage() {
           if (confirmDialog.onCancel) {
             confirmDialog.onCancel();
           }
-          setConfirmDialog({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+          hideConfirm();
         }}
         type={confirmDialog.type}
       />

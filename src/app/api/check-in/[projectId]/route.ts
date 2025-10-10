@@ -3,9 +3,9 @@ import { NextResponse } from 'next/server'
 
 export async function GET(
   request: Request,
-  { params }: { params: { projectId: string } }
+  context: { params: Promise<{ projectId: string }> }
 ) {
-  const projectId = params.projectId;
+  const { projectId } = await context.params;
 
   if (!projectId) {
     return NextResponse.json({ error: '项目ID不能为空' }, { status: 400 });
