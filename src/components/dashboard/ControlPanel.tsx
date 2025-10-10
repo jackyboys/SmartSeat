@@ -5,11 +5,17 @@ import { theme, NotTogetherRule } from './types';
 import { StatsChart } from './StatsChart';
 import { useSeatingStore } from '@/store/seatingStore';
 
-export function ControlPanel() {
+interface ControlPanelProps {
+  onSaveProject?: () => Promise<void>;
+  isSaving?: boolean;
+}
+
+export function ControlPanel({ onSaveProject, isSaving = false }: ControlPanelProps) {
   // 从 Zustand store 获取状态和 actions
   const currentProject = useSeatingStore((state) => state.currentProject);
   const tables = useSeatingStore((state) => state.tables);
   const unassignedGuests = useSeatingStore((state) => state.unassignedGuests);
+  const hasUnsavedChanges = useSeatingStore((state) => state.hasUnsavedChanges);
   
   // 使用 useMemo 计算 allGuests，避免每次渲染都创建新数组
   const allGuests = useMemo(() => {
@@ -117,15 +123,68 @@ export function ControlPanel() {
     setIsModalOpen('inviteCollaborator');
   };
 
-  // 这些需要在实际使用时实现
-  const handleExportPdf = () => {
-    // TODO: 实现 PDF 导出
-    console.log('Export PDF');
+  const handleSave = async () => {
+    if (onSaveProject) {
+      await onSaveProject();
+    }
   };
 
-  const handleExportPlaceCards = () => {
-    // TODO: 实现桌卡导出
-    console.log('Export Place Cards');
+  const handleExportPdf = async () => {
+    if (!currentProject) {
+      useSeatingStore.getState().showNotification('请先选择一个项目');
+      return;
+    }
+
+    useSeatingStore.getState().showNotification('正在生成PDF，请稍候...');
+
+    try {
+      const { generateSeatingPdf } = await import('@/utils/pdfGenerator');
+      
+      // 转换 stats 为正确的类型
+      const pdfStats = {
+        ...stats,
+        avgGuestsPerTable: parseFloat(stats.avgGuestsPerTable),
+        checkedInCount: stats.checkedInCount,
+        assignedGuestsCount: stats.assignedGuestsCount,
+        unassignedGuestsCount: stats.unassignedGuestsCount,
+      };
+      
+      generateSeatingPdf(currentProject, tables, unassignedGuests, pdfStats, guestNameMap);
+      useSeatingStore.getState().showNotification('PDF导出成功！');
+    } catch (error) {
+      console.error('PDF导出错误:', error);
+      useSeatingStore.getState().showNotification('导出PDF失败，请重试');
+    }
+  };
+
+  const handleExportPlaceCards = async () => {
+    if (!currentProject) {
+      useSeatingStore.getState().showNotification('请先选择一个项目');
+      return;
+    }
+
+    const assignedGuests = tables.flatMap(table =>
+      table.guests.map(guest => ({
+        guestName: guest.name,
+        tableName: table.tableName,
+      }))
+    );
+
+    if (assignedGuests.length === 0) {
+      useSeatingStore.getState().showNotification('没有已安排座位的宾客可以生成桌卡');
+      return;
+    }
+
+    useSeatingStore.getState().showNotification('正在生成桌卡PDF, 请稍候...');
+
+    try {
+      const { generatePlaceCardsPdf } = await import('@/utils/pdfGenerator');
+      generatePlaceCardsPdf(currentProject, tables);
+      useSeatingStore.getState().showNotification('桌卡PDF已成功生成！');
+    } catch (error) {
+      console.error('生成桌卡PDF时出错:', error);
+      useSeatingStore.getState().showNotification('生成桌卡失败，请重试');
+    }
   };
   return (
     <>
@@ -150,6 +209,19 @@ export function ControlPanel() {
         </h2>
 
         <div className="space-y-2">
+          <button
+            onClick={handleSave}
+            disabled={!hasUnsavedChanges || isSaving}
+            className={`w-full p-2.5 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+              hasUnsavedChanges && !isSaving
+                ? `bg-gradient-to-r ${theme.success}`
+                : 'bg-gray-700 cursor-not-allowed opacity-50'
+            }`}
+            data-testid="btn-save-project"
+          >
+            {isSaving ? '💾 保存中...' : hasUnsavedChanges ? '💾 保存项目' : '✅ 已保存'}
+          </button>
+
           <button
             onClick={handleManageProjects}
             className={`w-full p-2.5 rounded-lg bg-gradient-to-r ${theme.primary} font-semibold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg`}

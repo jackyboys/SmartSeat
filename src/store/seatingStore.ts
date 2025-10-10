@@ -581,12 +581,22 @@ export const useSeatingStore = create<SeatingStore>()(
         if (!overId) return;
 
         const state = get();
-        const { tables } = state;
+        const { tables, unassignedGuests } = state;
 
-        // 查找拖拽的宾客
-        const sourceTableId = activeId.toString().split('-')[0];
-        const sourceTable = tables.find((t) => t.id === sourceTableId);
-        const guest = sourceTable?.guests.find((g) => `${sourceTableId}-${g.id}` === activeId);
+        // 查找拖拽的宾客 - 可能在未分配区或某个桌子上
+        let guest: Guest | undefined;
+        let fromUnassigned = false;
+        
+        // 先检查未分配区
+        guest = unassignedGuests.find((g) => g.id === activeId);
+        if (guest) {
+          fromUnassigned = true;
+        } else {
+          // 在桌子中查找
+          const sourceTableId = activeId.toString().split('-')[0];
+          const sourceTable = tables.find((t) => t.id === sourceTableId);
+          guest = sourceTable?.guests.find((g) => `${sourceTableId}-${g.id}` === activeId);
+        }
 
         if (!guest) return;
 
@@ -605,6 +615,12 @@ export const useSeatingStore = create<SeatingStore>()(
         // 处理目标容器
         if (overId === 'unassigned') {
           // 拖到未分配区
+          if (fromUnassigned) {
+            // 已经在未分配区，不需要移动
+            return;
+          }
+
+          const sourceTableId = activeId.toString().split('-')[0];
           const updatedTables = tables.map((t) => {
             if (t.id === sourceTableId) {
               return {
@@ -627,41 +643,75 @@ export const useSeatingStore = create<SeatingStore>()(
             hasUnsavedChanges: true,
           });
         } else {
-          // 拖到其他桌子
-          const targetTableId = overId.toString().split('-')[0];
+          // 拖到桌子
+          const targetTableId = overId.toString();
           const targetTable = tables.find((t) => t.id === targetTableId);
 
           if (!targetTable) return;
 
           // 检查容量
-          if (targetTableId !== sourceTableId && targetTable.guests.length >= targetTable.capacity) {
-            state.showNotification(`桌子已满 (${targetTable.capacity}人)`);
+          const sourceTableId = fromUnassigned ? null : activeId.toString().split('-')[0];
+          const isSameTable = sourceTableId === targetTableId;
+          
+          if (!isSameTable && targetTable.guests.length >= targetTable.capacity) {
+            state.showNotification(`${targetTable.tableName} 已满 (${targetTable.capacity}人)`);
             return;
           }
 
           // 执行移动
-          const updatedTables = tables.map((t) => {
-            if (t.id === sourceTableId) {
-              // 从源桌子移除
-              return {
-                ...t,
-                guests: t.guests.filter((g) => g.id !== guest.id),
-              };
-            } else if (t.id === targetTableId) {
-              // 添加到目标桌子
-              const updatedGuest = { 
-                ...guest, 
-                status: 'confirmed' as GuestStatus 
-              };
-              return {
-                ...t,
-                guests: [...t.guests, updatedGuest],
-              };
-            }
-            return t;
-          });
+          let updatedTables = [...tables];
+          let updatedUnassigned = [...unassignedGuests];
 
-          set({ tables: updatedTables, hasUnsavedChanges: true });
+          if (fromUnassigned) {
+            // 从未分配区移到桌子
+            updatedUnassigned = unassignedGuests.filter((g) => g.id !== guest.id);
+            updatedTables = tables.map((t) => {
+              if (t.id === targetTableId) {
+                const updatedGuest = { 
+                  ...guest, 
+                  status: 'confirmed' as GuestStatus 
+                };
+                return {
+                  ...t,
+                  guests: [...t.guests, updatedGuest],
+                };
+              }
+              return t;
+            });
+          } else {
+            // 从桌子移到另一个桌子
+            if (isSameTable) {
+              // 同一个桌子内部，不需要移动
+              return;
+            }
+
+            updatedTables = tables.map((t) => {
+              if (t.id === sourceTableId) {
+                // 从源桌子移除
+                return {
+                  ...t,
+                  guests: t.guests.filter((g) => g.id !== guest.id),
+                };
+              } else if (t.id === targetTableId) {
+                // 添加到目标桌子
+                const updatedGuest = { 
+                  ...guest, 
+                  status: 'confirmed' as GuestStatus 
+                };
+                return {
+                  ...t,
+                  guests: [...t.guests, updatedGuest],
+                };
+              }
+              return t;
+            });
+          }
+
+          set({ 
+            tables: updatedTables, 
+            unassignedGuests: updatedUnassigned,
+            hasUnsavedChanges: true 
+          });
         }
       },
 
